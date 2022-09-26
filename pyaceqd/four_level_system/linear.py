@@ -1,8 +1,11 @@
+from asyncio import futures
 import subprocess
 import numpy as np
 import os
 from pyaceqd.tools import export_csv
 import tqdm
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait
 
 hbar = 0.6582173  # meV*ps
 
@@ -129,8 +132,9 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
     return t,g,x,y,b
 
 
-def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses):
+def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses,ae=5.0, phonons=False, pt_file="g2_tensor.pt", thread=False):
     """
+    calculates G2 for the x->g emission
     for every t1 in t, propagate to t1, then
     apply sigma = |g><x| from left and sigma^dagger from the right to the density matrix
     propagate from t1 to t1+tau_max
@@ -141,16 +145,32 @@ def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses):
     n_tau = int((tauend-tau0)/dt)
     tau = np.linspace(tau0, tauend, n_tau + 1)
 
+    # calculate process tensor for longest time tend+tauend. this can then be re-used for every following phonon calculation
+    if phonons:
+        biexciton_ace(t0,tend+tauend,*pulses,dt=0.1,ae=ae,verbose=True,phonons=phonons, delta_b=4, pt_file=pt_file)
+
     # special case tau=0:
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger * sigma * sigma * rho(t) * sigma^dagger) = 0, as is sigma*sigma always zero.
-
+    options = {"dt": 0.1, "ae": ae, "verbose": False, "phonons": phonons, "delta_b": 4, "gamma_e": 1/100, "gamma_e": 2/100, "lindblad": True, "apply_op_l": "|0><1|_4", "pt_file": pt_file}
     _G2 = np.zeros([len(t),len(tau)])
-    for i in tqdm.trange(len(t)):
-        _tend = t[i] + tauend
-        t,g,x,y,b = biexciton_ace(t0,_tend,*pulses,dt=0.1,ae=5.0,verbose=False,phonons=False, delta_b=4,gamma_e=1/100, gamma_b=2/100, lindblad=True, apply_op_l="|0><1|_4", apply_op_t=t[i])
-        # use, that Tr(sigma_x^dagger*sigma_x*rho) = x
-        # for the last n_tau elements, not including tau=0, which stays zero
-        _G2[i,1:] = x[-n_tau:]
+    if thread:
+        with tqdm.tqdm(total=len(t)) as tq:
+            with ThreadPoolExecutor(max_workers=15) as executor:
+                futures = []
+                for i in range(len(t)):
+                    _tend = t[i] + tauend
+                    _e = executor.submit(biexciton_ace,t0,_tend,*pulses,apply_op_t=t[i], suffix=i, **options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                wait(futures)
+                return futures
+    else:
+        for i in tqdm.trange(len(t)):
+            _tend = t[i] + tauend
+            t,g,x,y,b = biexciton_ace(t0,_tend,*pulses,apply_op_t=t[i], suffix=i, **options)
+            # use, that Tr(sigma_x^dagger*sigma_x*rho) = x
+            # for the last n_tau elements, not including tau=0, which stays zero
+            _G2[i,1:] = x[-n_tau:]
 
     return _G2
