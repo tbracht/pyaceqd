@@ -15,9 +15,9 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
     out_file = temp_dir + "biex{}.out".format(suffix)
     duration = np.abs(t_end)+np.abs(t_start)
     if pt_file is None:
-        pt_file = "sixls_linear_generate_{}ps_{}K_{}nm.pt".format(duration,temperature,ae)
-    pulse_file_x = temp_dir + "sixls_linear_pulse_x{}.dat".format(suffix)
-    pulse_file_y = temp_dir + "sixls_linear_pulse_y{}.dat".format(suffix)
+        pt_file = "biexciton_linear_generate_{}ps_{}K_{}nm.pt".format(duration,temperature,ae)
+    pulse_file_x = temp_dir + "biexciton_linear_pulse_x{}.dat".format(suffix)
+    pulse_file_y = temp_dir + "biexciton_linear_pulse_y{}.dat".format(suffix)
     t,g,x,y,b = 0,0,0,0,0
     gamma_b = gamma_b / 2  # both X and Y decay. the input gamma_b is 1/tau_b, where tau_b is the lifetime of the biexciton
     if phonons:
@@ -132,7 +132,7 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
     return t,g,x,y,b
 
 
-def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses,ae=5.0, phonons=False, pt_file="g2_tensor.pt", thread=False):
+def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses, ae=5.0, delta_b=4, delta_xy=0, gamma_e=1/100, gamma_b=2/100, phonons=False, pt_file="g2_tensor.pt", thread=False, workers=15):
     """
     calculates G2 for the x->g emission
     for every t1 in t, propagate to t1, then
@@ -152,19 +152,23 @@ def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses,ae=5.0, phonons=False
     # special case tau=0:
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger * sigma * sigma * rho(t) * sigma^dagger) = 0, as is sigma*sigma always zero.
-    options = {"dt": 0.1, "ae": ae, "verbose": False, "phonons": phonons, "delta_b": 4, "gamma_e": 1/100, "gamma_e": 2/100, "lindblad": True, "apply_op_l": "|0><1|_4", "pt_file": pt_file}
+    options = {"dt": dt, "ae": ae, "verbose": False, "phonons": phonons, "delta_b": delta_b, "delta_xy": delta_xy, "gamma_e": gamma_e, "gamma_e": gamma_b, "lindblad": True, "apply_op_l": "|0><1|_4", "pt_file": pt_file}
     _G2 = np.zeros([len(t),len(tau)])
     if thread:
         with tqdm.tqdm(total=len(t)) as tq:
-            with ThreadPoolExecutor(max_workers=15) as executor:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = []
                 for i in range(len(t)):
-                    _tend = t[i] + tauend
-                    _e = executor.submit(biexciton_ace,t0,_tend,*pulses,apply_op_t=t[i], suffix=i, **options)
+                    _e = executor.submit(biexciton_ace,t0,t[i] + tauend,*pulses,apply_op_t=t[i], suffix=i, **options)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 wait(futures)
-                return futures
+            for i in range(len(futures)):
+                futures[i] = futures[i].result()
+            # futures now contains t,g,x,y,b for every i
+            for i in range(len(t)):
+                # futures[i][2] are the x values 
+                _G2[i,1:] = futures[i][2][-n_tau:]
     else:
         for i in tqdm.trange(len(t)):
             _tend = t[i] + tauend
@@ -172,5 +176,4 @@ def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses,ae=5.0, phonons=False
             # use, that Tr(sigma_x^dagger*sigma_x*rho) = x
             # for the last n_tau elements, not including tau=0, which stays zero
             _G2[i,1:] = x[-n_tau:]
-
     return _G2
