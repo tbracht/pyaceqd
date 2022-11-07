@@ -78,3 +78,35 @@ class ChirpedPulse(Pulse):
         returns ratio of pulse area chirped/unchirped: tau / sqrt(tau * tau_0)
         """
         return np.sqrt(self.tau / self.tau_0)
+
+
+class PulseTrain:
+    """
+    pulse train, with pulses separated by delta_t. Each occurence can be constituted of multiple pulses, i.e., for 
+    multi-pulse schemes.
+    """
+
+    def __init__(self, delta_t, n_pulses, *pulses, start=0):
+        self.delta_t = delta_t
+        self.n_pulses = n_pulses
+        self.start = start
+        self.pulses = list(pulses)
+        self.start = start
+
+    def get_total(self, t):
+        field = np.zeros_like(t,dtype=complex)
+        for i in range(self.n_pulses):
+            for p in self.pulses:
+                field += p.get_total(t-self.delta_t*i-self.start)
+        return field
+
+class CWLaser(Pulse):
+    """
+    cw-laser, i.e., it is just on the whole time without any switch-on process
+    """
+
+    def __init__(self, e0, e_start=0, polar_x=1):
+        super().__init__(tau=5, e_start=e_start, e0=e0, polar_x=polar_x)
+
+    def get_envelope(self, t):
+        return self.e0
