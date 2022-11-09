@@ -100,6 +100,15 @@ class PulseTrain:
                 field += p.get_total(t-self.delta_t*i-self.start)
         return field
 
+    def get_total_xy(self, t):
+        field_x = np.zeros_like(t, dtype=complex)
+        field_y = np.zeros_like(field_x)
+        for i in range(self.n_pulses):
+            for p in self.pulses:
+                field_x += p.polar_x * p.get_total(t-self.delta_t*i-self.start)
+                field_y += p.polar_y * p.get_total(t-self.delta_t*i-self.start)
+        return field_x, field_y
+
 class CWLaser(Pulse):
     """
     cw-laser, i.e., it is just on the whole time without any switch-on process

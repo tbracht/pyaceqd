@@ -6,12 +6,34 @@ from pyaceqd.tools import export_csv, construct_t
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
+from pyaceqd.general_system.general_system import system_ace
 
 hbar = 0.6582173  # meV*ps
 
 def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-                  apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None):
+                  apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None, threshold="7", delete_param=True, prepare_only=False):
     system_prefix = "tls"
+    system_op = None
+    boson_op = "|1><1|_2"
+    initial = "|0><0|_2"
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2",gamma_e]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_2","x"]]
+    output_ops = ["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"]
+    # invoke_dict = {"dt": dt, "phonons": phonons, "generate_pt": generate_pt, "t_mem": t_mem, "ae": ae, "temperature": temperature}
+    data = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix,\
+                        apply_op=apply_op, apply_op_t=apply_op_t, apply=apply, nintermediate=ninterm, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=threshold,\
+                            system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, delete_param=delete_param, prepare_only=prepare_only)
+    if prepare_only:
+        return 0
+    t = data[:,0]  # note that the 't' of ACE is used in the end
+    g = data[:,1]
+    x = data[:,3]
+    pgx = data[:,5] + 1j*data[:,6]
+    pxg = data[:,7] + 1j*data[:,8]
+    return t,g,x,pgx,pxg
 
 def tls_ace(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None):
