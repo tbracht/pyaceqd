@@ -6,8 +6,8 @@ from pyaceqd.tools import export_csv
 hbar = 0.6582173  # meV*ps
 
 def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-                  apply_op=None, apply_op_t=0, apply="", nintermediate=10, pulse_file_x=None, pulse_file_y=None, system_prefix="",threshold="7",
-                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], delete_param=True, prepare_only=False):
+                  multitime_op=None, nintermediate=10, pulse_file_x=None, pulse_file_y=None, system_prefix="",threshold="7",
+                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False):
     
     duration = np.abs(t_end)+np.abs(t_start)  # time interval of simulation
     tmp_file = temp_dir + "{}_{}.param".format(system_prefix, suffix)  # parameter file
@@ -24,6 +24,14 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
     # allow not using an interaction hamiltonian
     if verbose and interaction_ops is None:
         print("No interaction hamiltonian ")
+    if multitime_op is not None:
+        if len(multitime_op) == 2:
+            # "" corresponds to: apply operator from left and the h.c. from the right
+            multitime_op = [multitime_op[0],multitime_op[1],""]
+        if multitime_op[2] is not "left" and multitime_op[2] is not "right" and multitime_op[2] is not "":
+            print(multitime_op[2])
+            print('give "left" or "right" or "" for multitime')
+            exit(0)
 
     if pt_file is None:
         pt_file = "{}_{}ps_{}nm_{}k_th{}_tmem{}_dt{}.pt".format(system_prefix,duration,ae,temperature,threshold,t_mem,dt)
@@ -34,9 +42,9 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
             generate_pt = True  # if pt_file is not present, set to verbose and calculate it
             verbose = True
     # check, if during propagation an operator is applied from left/right to the density matrix
-    multitime = False
-    if apply_op is not None:
-        multitime = True
+    #multitime = False
+    #if apply_op is not None:
+    #    multitime = True
     # pulse file generation
     t = np.arange(1.1*t_start,1.1*t_end,step=dt/(10*nintermediate))
     # if a specific pulse file is supplied, do not delete it after the calculation.
@@ -57,12 +65,15 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
         export_csv(pulse_file_x, t, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
         export_csv(pulse_file_y, t, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
     try:
+        # write the simulation param file
         with open(tmp_file,'w') as f:
+            # time axis of the simulation
             f.write("ta    {}\n".format(t_start))
             f.write("te    {}\n".format(t_end))
             f.write("dt    {}\n".format(dt))
             f.write("Nintermediate    {}\n".format(nintermediate))
             f.write("use_symmetric_Trotter true\n")
+            # process tensor generation for phonons
             if generate_pt:
                 f.write("t_mem    {}\n".format(t_mem))
                 f.write("threshold 1e-{}\n".format(threshold))
@@ -72,19 +83,23 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
                 f.write("Boson_J_a_e    {}\n".format(ae))
                 f.write("Boson_temperature    {}\n".format(temperature))
                 f.write("Boson_subtract_polaron_shift       true\n")
+            # read existing process tensor
             if phonons and not generate_pt:
                 # process tensor path has to be given or in current dir!
                 f.write("read_PT    {}\n".format(pt_file))
                 f.write("Boson_subtract_polaron_shift       true\n")
+            # initial state
             f.write("initial    {{ {} }}\n".format(initial))
+            # hamiltonian of the system
             if system_op is not None:
                 for _op in system_op:
                     f.write("add_Hamiltonian {{ {} }}\n".format(_op))
+            # lindblad operators
             if lindblad_ops is not None:
                 for _op in lindblad_ops:
                     # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
                     f.write("add_Lindblad {:.5f}  {{ {} }}\n".format(_op[1],_op[0]))  
-            # pulse
+            # pulse interaction
             if interaction_ops is not None:
                 for _op in interaction_ops:
                     # distinguish different polarizations
@@ -97,15 +112,16 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
                             print("Pulse file y not given")
                             exit(1)
                     f.write("add_Pulse file {}  {{ -0.5*pi*hbar*({}) }}\n".format(p_file,_op[0]))
-            if multitime:
+            # multitime operators, left, right or sandwitched
+            if multitime_op is not None:
                 # apply_Operator 20 {|0><1|_2} would apply the operator |0><1|_2 at t=20 from the left and the h.c. on the right on the density matrix
                 # note the Operator is applied at time t, i.e., in this example at t=20, so its effect is only visible at t=20+dt
-                if apply == "left":
-                    f.write("apply_Operator_left {} {{ {} }}\n".format(apply_op_t, apply_op))
-                elif apply == "right":
-                    f.write("apply_Operator_right {} {{ {} }}\n".format(apply_op_t, apply_op))
+                if multitime_op[2] == "left":
+                    f.write("apply_Operator_left {} {{ {} }}\n".format(multitime_op[1], multitime_op[0]))
+                elif multitime_op[2] == "right":
+                    f.write("apply_Operator_right {} {{ {} }}\n".format(multitime_op[1], multitime_op[0]))
                 else:
-                    f.write("apply_Operator {} {{ {} }}\n".format(apply_op_t, apply_op))
+                    f.write("apply_Operator {} {{ {} }}\n".format(multitime_op[1], multitime_op[0]))
             # output 
             for _op in output_ops:
                 f.write("add_Output {{ {} }}\n".format(_op))
@@ -114,7 +130,6 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
             f.write("outfile {}\n".format(out_file))
         # param file is now written, start ACE
         if prepare_only:
-            delete_param = False
             _remove_pulse_file = False
             print("prepared file {}, exiting.".format(tmp_file))
             return 0
@@ -130,7 +145,7 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
             os.remove(out_file)
         except FileNotFoundError:
             pass
-        if delete_param:
+        if not prepare_only:
             os.remove(tmp_file)
         if _remove_pulse_file:
             os.remove(pulse_file_x)

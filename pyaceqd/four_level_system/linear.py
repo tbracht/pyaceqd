@@ -6,16 +6,44 @@ from pyaceqd.tools import export_csv
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
+from pyaceqd.general_system.general_system import system_ace
 
 hbar = 0.6582173  # meV*ps
 
-def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=2/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton_(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, generate_pt=False, t_mem=10, threshold="7", ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, ninterm=10, prepare_only=False):
+    system_prefix = "b_linear"
+    system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|2><2|_4".format(delta_xy)]
+    boson_op = "1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4"
+    initial = "|0><0|_4"
+    lindblad_ops = []
+    if lindblad:
+        if gamma_b is None:
+            gamma_b = 2*gamma_e
+        lindblad_ops = [["|0><1|_4",gamma_e],["|0><2|_4",gamma_e],
+                        ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
+    output_ops = ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"]
+    data = system_ace(t_start, t_end, *pulses, dt=dt, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir,phonons=phonons, pt_file=pt_file, suffix=suffix,\
+                      multitime_op=multitime_op, nintermediate=ninterm, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, system_prefix=system_prefix, threshold=threshold,\
+                      system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+    if prepare_only:
+        return 0
+    t = data[:,0]
+    g = data[:,1]
+    x = data[:,3]
+    y = data[:,5]
+    b = data[:,7]
+    return t,g,x,y,b
+
+def biexciton_ace(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=2/100, phonons=False, generate_pt=False, t_mem=10, threshold="7",ae=3.0, temperature=4,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op_l=None, apply_op_t=0):
     tmp_file = temp_dir + "biex{}.param".format(suffix)
     out_file = temp_dir + "biex{}.out".format(suffix)
     duration = np.abs(t_end)+np.abs(t_start)
     if pt_file is None:
-        pt_file = "biexciton_linear_generate_{}ps_{}K_{}nm.pt".format(duration,temperature,ae)
+        pt_file = "biexciton_linear_{}ps_{}nm_{}k_th{}_tmem{}_dt{}.pt".format(duration,ae,temperature,threshold,t_mem,dt)
     pulse_file_x = temp_dir + "biexciton_linear_pulse_x{}.dat".format(suffix)
     pulse_file_y = temp_dir + "biexciton_linear_pulse_y{}.dat".format(suffix)
     t,g,x,y,b = 0,0,0,0,0
@@ -29,7 +57,7 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
     if apply_op_l is not None:
         multitime = True
     try:
-        t = np.arange(1.1*t_start,1.1*t_end,step=0.5*dt)
+        t = np.arange(1.1*t_start,1.1*t_end,step=0.1*dt)
         pulse_x = np.zeros_like(t, dtype=complex)
         pulse_y = np.zeros_like(t, dtype=complex)
         for _p in pulses:
@@ -41,18 +69,17 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
             f.write("ta    {}\n".format(t_start))
             f.write("te    {}\n".format(t_end))
             f.write("dt    {}\n".format(dt))
+            f.write("Nintermediate    10\n")
+            f.write("use_symmetric_Trotter true\n")            
             if generate_pt:
                 f.write("t_mem    {}\n".format(t_mem))
-                f.write("threshold 1e-7\n")
+                f.write("threshold 1e-{}\n".format(threshold))
                 f.write("use_Gaussian true\n")
                 f.write("Boson_SysOp    { 1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4}\n")
                 f.write("Boson_J_type         QDPhonon\n")
                 f.write("Boson_J_a_e    {}\n".format(ae))
                 f.write("Boson_temperature    {}\n".format(temperature))
                 f.write("Boson_subtract_polaron_shift       true\n")
-            else:
-                f.write("Nintermediate    10\n")
-                f.write("use_symmetric_Trotter true\n")
             if phonons and not generate_pt:
                 # process tensor path has to be given or in current dir!
                 f.write("read_PT    {}\n".format(pt_file))
@@ -78,6 +105,7 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
             f.write("add_Output {|1><1|_4}\n")
             f.write("add_Output {|2><2|_4}\n")
             f.write("add_Output {|3><3|_4}\n")
+            f.write("add_Output {|0><3|_4}\n")
             # if multitime:
             #     f.write("add_Output {|0><1|_4}\n")
             #     f.write("add_Output {|0><2|_4}\n")
@@ -105,6 +133,7 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
         x = data[:,3]
         y = data[:,5]
         b = data[:,7]
+        pgb = data[:,9]+1j*data[:,10]
         # if multitime:
         #     p_gx = data[:,9] + 1j*data[:,10]
         #     p_gy = data[:,11] + 1j*data[:,12]
@@ -129,7 +158,7 @@ def biexciton_ace(t_start, t_end, *pulses, dt=0.1, delta_xy=0, delta_b=4, gamma_
         os.remove(pulse_file_y)
     # if multitime:
     #     return t,g,x,y,b,p_gx,p_gy,p_gb,p_xy,p_xb,p_yb
-    return t,g,x,y,b
+    return t,g,x,y,b,pgb
 
 
 def G2(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, *pulses, ae=5.0, delta_b=4, delta_xy=0, gamma_e=1/100, gamma_b=2/100, phonons=False, pt_file="g2_tensor.pt", thread=False, workers=15):
