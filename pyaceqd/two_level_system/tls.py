@@ -6,35 +6,33 @@ from pyaceqd.tools import export_csv, construct_t
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
-from pyaceqd.general_system.general_system import system_ace
+from pyaceqd.general_system.general_system import system_ace, system_ace_stream
 
 hbar = 0.6582173  # meV*ps
 
 def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None, threshold="7", prepare_only=False):
+         multitime_op=None, ninterm=10, pulse_file=None, threshold="7", prepare_only=False, stream=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"]):
     system_prefix = "tls"
     system_op = None
-    boson_op = "|1><1|_2"
+    boson_op = "1*|1><1|_2"
     initial = "|0><0|_2"
     lindblad_ops = []
     if lindblad:
         lindblad_ops = [["|0><1|_2",gamma_e]]
     # note that the TLS uses x-polar
     interaction_ops = [["|1><0|_2","x"]]
-    output_ops = ["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"]
+    #output_ops = ["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"]
     # multitime: for ex. ["|1><0|_2",0,"left"] applies |1><0|_2 at t=0 from the left
     # invoke_dict = {"dt": dt, "phonons": phonons, "generate_pt": generate_pt, "t_mem": t_mem, "ae": ae, "temperature": temperature}
-    data = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix,\
+    if stream:
+        result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+    else:
+        result = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix,\
                       multitime_op=multitime_op, nintermediate=ninterm, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=threshold,\
                       system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
-    if prepare_only:
-        return 0
-    t = data[:,0]  # note that the 't' of ACE is used in the end
-    g = data[:,1]
-    x = data[:,3]
-    pgx = data[:,5] + 1j*data[:,6]
-    pxg = data[:,7] + 1j*data[:,8]
-    return t,g,x,pgx,pxg
+    return result
 
 def tls_ace(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None):
@@ -288,10 +286,10 @@ def G1(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=5.0, te
     apply sigma = |g><x| from the left to the density matrix
     propagate from t1 to t1+tau_max
     use results to calculate G1(t1,tau=0,..,tau_max) by applying sigma^dagger from the left to the density matrix
-    and then taking the trace of the dens. matrix (this results in the conjugatet polarization at that point)
+    and then taking the trace of the dens. matrix (this results in some polarization at that point)
 
     dtau is used as dt in calculations, dt just defines the t-grid discretization of G1. Note, that for a pulse train, this also has to be well-resolved
-    dtau is the tau grid discretization.
+    dtau is also the tau grid discretization.
     """
     # includes tend
     t = np.linspace(t0, tend, int((tend-t0)/dt)+1)

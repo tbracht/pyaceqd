@@ -11,7 +11,7 @@ from pyaceqd.general_system.general_system import system_ace
 hbar = 0.6582173  # meV*ps
 
 def biexciton_(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, generate_pt=False, t_mem=10, threshold="7", ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, ninterm=10, prepare_only=False):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, ninterm=10, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"]):
     system_prefix = "b_linear"
     system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|2><2|_4".format(delta_xy)]
     boson_op = "1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4"
@@ -22,20 +22,12 @@ def biexciton_(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1
             gamma_b = 2*gamma_e
         lindblad_ops = [["|0><1|_4",gamma_e],["|0><2|_4",gamma_e],
                         ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
-    # note that the TLS uses x-polar
     interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
-    output_ops = ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"]
-    data = system_ace(t_start, t_end, *pulses, dt=dt, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir,phonons=phonons, pt_file=pt_file, suffix=suffix,\
+    
+    result = system_ace(t_start, t_end, *pulses, dt=dt, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir,phonons=phonons, pt_file=pt_file, suffix=suffix,\
                       multitime_op=multitime_op, nintermediate=ninterm, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, system_prefix=system_prefix, threshold=threshold,\
                       system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
-    if prepare_only:
-        return 0
-    t = data[:,0]
-    g = data[:,1]
-    x = data[:,3]
-    y = data[:,5]
-    b = data[:,7]
-    return t,g,x,y,b
+    return result
 
 def biexciton_ace(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=2/100, phonons=False, generate_pt=False, t_mem=10, threshold="7",ae=3.0, temperature=4,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op_l=None, apply_op_t=0):
