@@ -112,9 +112,9 @@ def pulsed_mollow_tls(pulse_tau, areas, tend=500, tauend=500, dt=0.2, dtau=0.02,
         # integrate along the t axis
         total += np.real(np.trapz(spectra.transpose(), t_axis))
         spectrums[i] = total
-        if save_dir is not None:
-            _name = "_tau{:.2f}_lifet{:.1f}.npy".format(pulse_tau,1/gamma_e)
-            np.save(save_dir+"x"+_name,np.fft.fftshift(fft_freqs))
-            np.save(save_dir+"y"+_name,areas)
-            np.save(save_dir+"z"+_name,spectrums)
+    if save_dir is not None:
+        _name = "_tau{:.2f}_lifet{:.1f}.npy".format(pulse_tau,1/gamma_e)
+        np.save(save_dir+"x"+_name,np.fft.fftshift(fft_freqs))
+        np.save(save_dir+"y"+_name,areas)
+        np.save(save_dir+"z"+_name,spectrums)
     return np.fft.fftshift(fft_freqs), areas, spectrums
