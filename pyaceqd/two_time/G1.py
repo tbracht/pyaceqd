@@ -42,10 +42,10 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
         if options["pt_file"] is None or not os.path.exists(options["pt_file"]+"_initial"):
             print("calculating pt file for G1")
             system(0,40,*pulses,dt=dtau,verbose=True,**options)
-            if prepare_only:
-                return 0,0,0
         else:
             print("using pt_file {}".format(options["pt_file"]))
+        if prepare_only:
+                return 0,0,0
 
     _G1 = np.zeros([len(t),len(tau)],dtype=complex)
     # G1 part
