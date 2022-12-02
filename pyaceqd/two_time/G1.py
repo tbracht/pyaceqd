@@ -77,7 +77,7 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
             _G1[i,1:] = futures[i][2][-n_tau:]  # the last n_tau values
     return t, tau, _G1
 
-def pulsed_mollow_tls(pulse_tau, areas, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None,prepare_only=False):
+def pulsed_mollow_tls(pulse_tau, areas, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False):
     n_tau = int((tauend)/dtau)
     tau_axis = np.linspace(0, tauend, n_tau + 1)
     spectrums = np.zeros([len(areas),2*len(tau_axis)-1])
@@ -85,7 +85,7 @@ def pulsed_mollow_tls(pulse_tau, areas, tend=500, tauend=500, dt=0.2, dtau=0.02,
     for i in range(len(areas)):
         print("{}/{}".format(i+1,len(areas)))
         p1 = ChirpedPulse(tau_0=pulse_tau, e_start=0, alpha=0, e0=areas[i], t0=pulse_tau*4)
-        t_axis, tau_axis, g1 = G1_twols(0,tend,0,tauend,dt,dtau,p1,ae=ae,gamma_e=gamma_e,coarse_t=True,phonons=phonons, workers=workers, temperature=temperature, pt_file=pt_file, temp_dir=temp_dir, prepare_only=prepare_only)
+        t_axis, tau_axis, g1 = G1_twols(0,tend,0,tauend,dt,dtau,p1,ae=ae,gamma_e=gamma_e,coarse_t=True,phonons=phonons, workers=workers, temperature=temperature, pt_file=pt_file, temp_dir=temp_dir, prepare_only=prepare_only, simple_exp=simple_exp)
         # plt.pcolormesh(t_axis,tau_axis,np.real(g1.transpose()),shading='auto')
         # plt.xlabel("t in ps")
         # plt.ylabel("tau in ps")
