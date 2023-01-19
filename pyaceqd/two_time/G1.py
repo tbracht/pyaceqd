@@ -1,5 +1,3 @@
-from asyncio import futures
-import subprocess
 import numpy as np
 import os
 from pyaceqd.tools import export_csv, construct_t

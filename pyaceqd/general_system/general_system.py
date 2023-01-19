@@ -191,7 +191,11 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
     # sanity checks
     sanity_checks(system_op=system_op,phonons=phonons,boson_op=boson_op,initial=initial,interaction_ops=interaction_ops, verbose=verbose)
     # check for multi-time operations
-    check_multitime(multitime_op=multitime_op,verbose=verbose)
+    if multitime_op is not None:
+        if isinstance(multitime_op, dict):
+            multitime_op = [multitime_op]
+        for _mto in multitime_op:
+            check_multitime(multitime_op=_mto,verbose=verbose)
     if pt_file is None:
         pt_file = "{}_{}nm_{}k_th{}_tmem{}_dt{}.ptr".format(system_prefix,ae,temperature,threshold,t_mem,dt)
     if phonons:
@@ -278,10 +282,11 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
                     f.write("add_Pulse file {}  {{ -0.5*pi*hbar*({}) }}\n".format(p_file,_op[0]))
             # multitime operators, left, right or sandwitched
             if multitime_op is not None:
-                # apply_Operator 20 {|0><1|_2} would apply the operator |0><1|_2 at t=20 from the left and the h.c. on the right on the density matrix
-                # note the Operator is applied at time t, i.e., in this example at t=20, so its effect is only visible at t=20+dt
-                # if applyBefore ist true, the effect is visible at t=20
-                f.write("apply_Operator{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**multitime_op))
+                for _mto in multitime_op:
+                    # apply_Operator 20 {|0><1|_2} would apply the operator |0><1|_2 at t=20 from the left and the h.c. on the right on the density matrix
+                    # note the Operator is applied at time t, i.e., in this example at t=20, so its effect is only visible at t=20+dt
+                    # if applyBefore ist true, the effect is visible at t=20
+                    f.write("apply_Operator{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto))
             # output 
             for _op in output_ops:
                 f.write("add_Output {{ {} }}\n".format(_op))    
