@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.special import erf
 
 HBAR = 0.6582173  # meV*ps
 
@@ -24,6 +25,9 @@ class Pulse:
     def get_envelope(self, t):
         return self.e0 * np.exp(-0.5 * ((t - self.t0) / self.tau) ** 2) / (np.sqrt(2 * np.pi) * self.tau)
     
+    def get_integral(self, t):
+        return self.e0 * 0.5 * (1 - erf((self.t0 - t)/(np.sqrt(2)*self.tau)))
+
     def set_frequency(self, f):
         """
         use a lambda function f taking a time t to set the time dependent frequency.
@@ -72,6 +76,9 @@ class ChirpedPulse(Pulse):
 
     def get_envelope(self, t):
         return self.e0 * np.exp(-0.5 * ((t - self.t0) / self.tau) ** 2) / (np.sqrt(2 * np.pi * self.tau * self.tau_0))
+
+    def get_integral(self, t):
+        return self.e0 * 0.5 * np.sqrt(self.tau/self.tau_0) * (1 - erf((self.t0 - t)/(np.sqrt(2)*self.tau)))
 
     def get_ratio(self):
         """
