@@ -82,11 +82,12 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
             ts.append(t_gaussian)
         else:
             ts.append(np.arange(intervals[0][0],intervals[0][1],dt_small))
-        ts.append(np.exp(np.arange(np.log(intervals[0][1]),np.log(tend),dt_small)))
+        _exp_part = np.exp(np.arange(np.log(intervals[0][1]),np.log(tend),dt_small))
+        ts.append(np.round(_exp_part))
         ts.append(np.array([tend]))
         # make sure that there are no crazy numbers, round to 2 decimals. somehow this seems to work best
         # even better than rounding to the step-size dt_small
-        return np.round(np.concatenate(ts,axis=0), decimals=2)  
+        return np.concatenate(ts,axis=0)  # np.round(np.concatenate(ts,axis=0), decimals=2)  
     for i in range(len(intervals)):
         if i > 0:
             ts.append(np.arange(intervals[i-1][1],intervals[i][0],dt_big))

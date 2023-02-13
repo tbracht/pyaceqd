@@ -63,10 +63,10 @@ class Pulse:
 
 
 class ChirpedPulse(Pulse):
-    def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1):
+    def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1, phase=0):
         self.tau_0 = tau_0
         self.alpha = alpha
-        super().__init__(tau=np.sqrt(alpha**2 / tau_0**2 + tau_0**2), e_start=e_start, w_gain=alpha/(alpha**2 + tau_0**4), t0=t0, e0=e0, polar_x=polar_x)
+        super().__init__(tau=np.sqrt(alpha**2 / tau_0**2 + tau_0**2), e_start=e_start, w_gain=alpha/(alpha**2 + tau_0**4), t0=t0, e0=e0, polar_x=polar_x, phase=phase)
     
     def get_parameters(self):
         """
