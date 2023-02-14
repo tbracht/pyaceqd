@@ -109,7 +109,7 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses):
     ts.append(np.array([tend]))
     return np.round(np.concatenate(ts,axis=0), decimals=2)  
 
-def export_csv(filename, *arg, precision=4, delimit=','):
+def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
     """
     Exportiert Arrays als .csv Datei
     :param delimit: delimiter 
@@ -132,7 +132,8 @@ def export_csv(filename, *arg, precision=4, delimit=','):
             # comments='# ',
             # header='X , MW'
         )
-        # print("[i] csv saved to {}".format(filename))
+        if verbose:
+            print("[i] csv saved to {}".format(filename))
     except TypeError:
         print("TypeError occured")
         for arguments in arg:
