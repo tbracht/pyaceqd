@@ -53,7 +53,7 @@ class OnePhotonTimebin():
 
     def prepare_pulsefile(self, verbose=False):
         # 2*tb is the maximum simulation length, 0 is the start of the simulation
-        _t_pulse = np.arange(0,2.1*self.tb,step=self.dt)
+        _t_pulse = np.arange(0,2.1*self.tb,step=self.dt/5)  # notice that for usual propagation, dt/10 is used
         # different polarizations
         self.pulse_file_x = self.temp_dir + "G1_pulse_x.dat"
         self.pulse_file_y = self.temp_dir + "G1_pulse_y.dat"
@@ -81,7 +81,7 @@ class OnePhotonTimebin():
         
     def rho_ee(self):
         output_ops = [self.x_op]
-        t,x = self.system(0,self.tb,output_ops=output_ops,**self.options)
+        t,x = self.system(0,self.tb,output_ops=output_ops,suffix="ee",**self.options)
         x = np.real(x)
         t = np.real(t)
         rho_ee = np.trapz(x,t)
@@ -89,7 +89,7 @@ class OnePhotonTimebin():
     
     def rho_ll(self):
         output_ops = [self.x_op]
-        t,x = self.system(0,2*self.tb,output_ops=output_ops,**self.options)
+        t,x = self.system(0,2*self.tb,output_ops=output_ops,suffix="ll",**self.options)
         x = np.real(x)
         t = np.real(t)
         # timesteps only during the second timebin are of relevance
