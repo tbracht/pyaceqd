@@ -99,14 +99,14 @@ class OnePhotonTimebin():
         rho_ee = np.trapz(relevant_x,relevant_t)
         return rho_ee
 
-    def rho_el(self):
+    def rho_el(self, dt_small=0.1):
         output_ops = [self.sigma_x]
         multitime_op = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
 
         if self.gaussian_t is not None:
-            t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,5*self.dt,50*self.dt,*self.pulses)
+            t1 = simple_t_gaussian(0, self.gaussian_t, self.tb, dt_small, 10*dt_small, *self.pulses)
         else:
-            t1 = construct_t(0, self.tb, 5*self.dt, 50*self.dt, *self.pulses, simple_exp=self.simple_exp)
+            t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
         
         _G1 = np.zeros([len(t1)],dtype=complex)
         with tqdm.tqdm(total=len(t1)) as tq:
