@@ -27,8 +27,8 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, gamma_e=1/65, phonons
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
-def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, normalize=False, phonons=False, pt_file=None):
-    t,g,x,d = darkmodel(t0,tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file)
+def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, normalize=False, phonons=False, pt_file=None, prepare_only=False):
+    t,g,x,d = darkmodel(t0,tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file,prepare_only=prepare_only)
     x = np.real(x)
     t = np.real(t)
     rho_ee = np.trapz(x,t)
