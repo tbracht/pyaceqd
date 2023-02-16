@@ -295,7 +295,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
         if prepare_only:
             _remove_pulse_file = False
             print("prepared file {}, exiting.".format(tmp_file))
-            return [0 for i in range(len(output_ops))]
+            return [np.array([0,0]) for i in range(1+len(output_ops))]
         if not verbose:
             subprocess.check_output(["ACE_stream",tmp_file])
         else:

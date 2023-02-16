@@ -34,7 +34,7 @@ class OnePhotonTimebin():
         # prepare the operators used in output/multitime
         self.prepare_operators(sigma_x=sigma_x, verbose=verbose)
 
-    def calc_densitymatrix(self, first_abs=False):
+    def calc_densitymatrix(self, first_abs=False, verbose=False):
         """
         if first_abs=True, takes the absolute value of the G1 function before integration. 
         this kills all phase-related effects.
@@ -46,9 +46,9 @@ class OnePhotonTimebin():
         rho_el = np.abs(np.trapz(rho_el_g1,t1))
         if first_abs:
             rho_el = np.trapz(np.abs(rho_el_g1),t1)
-        
-        print("ee:{}, ll:{}, el:{}".format(rho_ee,rho_ll,rho_el))
-        print("ee:{}, ll:{}, el:{}".format(rho_ee/norm,rho_ll/norm,rho_el/norm))
+        if verbose:
+            print("ee:{}, ll:{}, el:{}".format(rho_ee,rho_ll,rho_el))
+            print("ee:{}, ll:{}, el:{}".format(rho_ee/norm,rho_ll/norm,rho_el/norm))
         return rho_ee, rho_ll, rho_el
 
     def prepare_pulsefile(self, verbose=False):
@@ -67,7 +67,7 @@ class OnePhotonTimebin():
 
     def prepare_operators(self, sigma_x, verbose=False):
         # for ex.: sigma = |g><x|, i.e., |0><1|_2
-        pattern = "^\|([0-9]*)><([0-9]*)\|_([1-9]*)"  # catches the thee relevant numbers in 3 capture groups 
+        pattern = "^\|([0-9]*)><([0-9]*)\|_([1-9]*)"  # catches the three relevant numbers in 3 capture groups 
         re_result = re.search(pattern=pattern, string=sigma_x)
         lower_state = re_result.group(1)
         upper_state = re_result.group(2)
