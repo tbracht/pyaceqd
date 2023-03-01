@@ -22,7 +22,7 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/
             gamma_b = gamma_e  # the same rate for x and b, as we only consider one x-state
         lindblad_ops = [["|0><1|_4",gamma_e],["|1><3|_4",gamma_b]]  #  |2> is dark, does not decay 
     # we use 'x'-polar for coupling between G, X and B, while 'y'-polar couples X and D
-    interaction_ops = [["|2><0|_4","x"],["|3><2|_4","y"]]
+    interaction_ops = [["|2><0|_4","x"],["|3><2|_4","x"],["|1><0|_4","y"]]
     
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
@@ -200,11 +200,11 @@ def G2_eeee(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
             # futures[i][4] are the xx values , [2] are the x values
             #_G2[i,1:] = np.real(futures[i][2][-n_tau:])
             if n_t2 > 0: 
-                    temp_t2[1:n_t2+1] = np.abs(futures[i][2][-n_t2:])
+                temp_t2[1:n_t2+1] = np.abs(futures[i][2][-n_t2:])
             t_new = t2[:len(temp_t2)]
             _G2[i] = np.trapz(temp_t2,t_new)
             if normalize and len(t_new) > 1:
-                    _G2[i] = 1/np.abs(t_new[-1]-t_new[0]) * _G2[i]
+                _G2[i] = 1/np.abs(t_new[-1]-t_new[0]) * _G2[i]
     os.remove(pulse_file_x)
     os.remove(pulse_file_y)
     return t1, _G2
