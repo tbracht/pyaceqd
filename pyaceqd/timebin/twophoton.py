@@ -38,13 +38,17 @@ class TwoPhotonTimebin(TimeBin):
         density_matrix[0,3] = self.rho_ee_ll()
         density_matrix[3,0] = np.conj(density_matrix[0,3])
         # el_xx
-        density_matrix[1,2] = self.rho_el_le()
+        density_matrix[1,2] = 0  # self.rho_el_le()
         density_matrix[2,1] = np.conj(density_matrix[1,2])
-        density_matrix[1,3] = self.rho_ll_ll()
+        density_matrix[1,3] = self.rho_el_ll()
         density_matrix[3,1] = np.conj(density_matrix[1,3])
         # le_ll
-        density_matrix[2,3] = self.rho_le_ll()
+        density_matrix[2,3] = 0  # self.rho_le_ll()
         density_matrix[3,2] = np.conj(density_matrix[2,3])
+        # normalize 
+        norm = np.trace(density_matrix)
+        # still output both, because the diagonal contains the number of coincidence measurments
+        return density_matrix/norm, density_matrix
 
     def prepare_operators(self, sigma_gx, sigma_xb, verbose=False):
         # for ex.: sigma_gx = |g><x|, i.e., |0><1|_2
