@@ -31,16 +31,16 @@ class TwoPhotonTimebin(TimeBin):
         _,_,density_matrix[2,2] = self.rho_le_le()
         _,_,density_matrix[3,3] = self.rho_ll_ll()
         # ee_xx
-        density_matrix[0,1] = self.rho_ee_el()
+        _,_,density_matrix[0,1] = self.rho_ee_el()
         density_matrix[1,0] = np.conj(density_matrix[0,1])
-        density_matrix[0,2] = self.rho_ee_le()
+        _,_,density_matrix[0,2] = self.rho_ee_le()
         density_matrix[2,0] = np.conj(density_matrix[0,2])
-        density_matrix[0,3] = self.rho_ee_ll()
+        _,_,density_matrix[0,3] = self.rho_ee_ll()
         density_matrix[3,0] = np.conj(density_matrix[0,3])
         # el_xx
         density_matrix[1,2] = 0  # self.rho_el_le()
         density_matrix[2,1] = np.conj(density_matrix[1,2])
-        density_matrix[1,3] = self.rho_el_ll()
+        _,_,density_matrix[1,3] = self.rho_el_ll()
         density_matrix[3,1] = np.conj(density_matrix[1,3])
         # le_ll
         density_matrix[2,3] = 0  # self.rho_le_ll()
@@ -97,7 +97,7 @@ class TwoPhotonTimebin(TimeBin):
         t2 = np.linspace(0, self.tb, n_tau + 1)
         _G2 = np.zeros([len(t1)])
         tend = self.tb  # always the same
-        with tqdm.tqdm(total=len(t1)) as tq:
+        with tqdm.tqdm(total=len(t1), leave=None) as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
                 for i in range(len(t1)):
@@ -154,7 +154,7 @@ class TwoPhotonTimebin(TimeBin):
         t2 = np.linspace(0, self.tb, n_tau + 1)
         _G2 = np.zeros([len(t1)])
         tend = 2*self.tb  # always the same
-        with tqdm.tqdm(total=len(t1)) as tq:
+        with tqdm.tqdm(total=len(t1), leave=None) as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
                 for i in range(len(t1)):
@@ -206,9 +206,9 @@ class TwoPhotonTimebin(TimeBin):
         n_tau = int((self.tb)/self.dt)
         # simulation time-axis
         t2 = np.linspace(0, self.tb, n_tau + 1)
-        _G2 = np.zeros([len(t1)], dtype=complex)
+        _G2 = np.zeros([len(t1)])
         tend = 2*self.tb  # always the same
-        with tqdm.tqdm(total=len(t1)) as tq:
+        with tqdm.tqdm(total=len(t1), leave=None) as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
                 for i in range(len(t1)):
@@ -260,7 +260,7 @@ class TwoPhotonTimebin(TimeBin):
         n_tau = int((self.tb)/self.dt)
         # simulation time-axis
         t2 = np.linspace(0, self.tb, n_tau + 1)
-        _G2 = np.zeros([len(t1)], dtype=complex)
+        _G2 = np.zeros([len(t1)])
         tend = 2*self.tb  # always the same
         with tqdm.tqdm(total=len(t1), leave=None) as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
@@ -367,7 +367,7 @@ class TwoPhotonTimebin(TimeBin):
                 # pgx
                 temp_t2[k] = np.abs(futures[k][1][-1])
             _G2[i] = np.trapz(temp_t2, t2_array)
-        return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+        return t1, _G2, np.abs(np.trapz(_G2, t1))*self.gamma_e**2
 
     def rho_ee_el(self):
         output_ops = [self.sigma_x]

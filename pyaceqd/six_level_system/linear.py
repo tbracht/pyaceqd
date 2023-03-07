@@ -22,14 +22,12 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
     E_B = 2.*delta_E - delta_B
     return E_X, E_Y, E_S, E_F, E_B
 
-def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0, phonons=False, generate_pt=False, t_mem=10, ae=3, temperature=1, verbose=False, d0=0.25, d1=0.12, d2=0.05, temp_dir="/mnt/temp_data/"):
+def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0, pulse_file_x=None, pulse_file_y=None, phonons=False, generate_pt=False, t_mem=10, ae=3, temperature=1, verbose=False, d0=0.25, d1=0.12, d2=0.05, temp_dir="/mnt/temp_data/"):
     # print(pulses)
     tmp_file = temp_dir + "sixls_linear.param"
     out_file = temp_dir + "sixls_linear.out"
     duration = np.abs(t_end)+np.abs(t_start)
     pt_file = "sixls_linear_generate_{}ps_{}K_{}nm.pt".format(duration,temperature,ae)
-    pulse_file_x = temp_dir + "sixls_linear_pulse_x.dat"
-    pulse_file_y = temp_dir + "sixls_linear_pulse_y.dat"
     t,g,x,y,s,f,b = 0,0,0,0,0,0,0
     # E_x, E_y, E_s, E_f, E_b = energies_linear(d0, d1, d2, delta_b, delta_E=0)
     E_x = 0.5*(d0+d1)
@@ -50,13 +48,19 @@ def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0,
         print("E_x:{:.4f}, E_y:{:.4f}, E_s:{:.4f}, E_f:{:.4f}, E_b:{:.4f}".format(E_xnew,E_y,E_s,E_f,E_b))
     try:
         t = np.arange(1.1*t_start,1.1*t_end,step=0.5*dt)
-        pulse_x = np.zeros_like(t, dtype=complex)
-        pulse_y = np.zeros_like(t, dtype=complex)
-        for _p in pulses:
-            pulse_x = pulse_x + _p.polar_x * _p.get_total(t)
-            pulse_y = pulse_y + _p.polar_y * _p.get_total(t)
-        export_csv(pulse_file_x, t, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
-        export_csv(pulse_file_y, t, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
+        if pulse_file_x is None:
+            pulse_file_x = temp_dir + "sixls_linear_pulse_x.dat"
+            pulse_file_y = temp_dir + "sixls_linear_pulse_y.dat"
+            pulse_x = np.zeros_like(t, dtype=complex)
+            pulse_y = np.zeros_like(t, dtype=complex)
+            for _p in pulses:
+                pulse_x = pulse_x + _p.polar_x * _p.get_total(t)
+                pulse_y = pulse_y + _p.polar_y * _p.get_total(t)
+            export_csv(pulse_file_x, t, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
+            export_csv(pulse_file_y, t, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
+        if pulse_file_y is None:
+            print("supply pulse_file_x and pulse_file_y")
+            exit(0)
         with open(tmp_file,'w') as f:
             f.write("ta    {}\n".format(t_start))
             f.write("te    {}\n".format(t_end))
