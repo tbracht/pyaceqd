@@ -84,7 +84,7 @@ def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2
     tau_axis = np.linspace(0, tauend, n_tau + 1)
     spectrums = np.zeros([len(areas),2*len(tau_axis)-1])
     fft_freqs = -2*np.pi * HBAR * np.fft.fftfreq(2*len(tau_axis)-1,d=dtau)
-    for i in range(len(areas),leave=None):
+    for i in tqdm.trange(len(areas),leave=None):
         # print("{}/{}".format(i+1,len(areas)))
         p1 = ChirpedPulse(tau_0=pulse_tau, e_start=detuning, alpha=0, e0=areas[i], t0=pulse_tau*4)
         t_axis, tau_axis, g1 = G1_twols(0,tend,0,tauend,dt,dtau,p1,ae=ae,gamma_e=gamma_e,coarse_t=True,phonons=phonons, workers=workers, temperature=temperature, pt_file=pt_file, temp_dir=temp_dir, prepare_only=prepare_only, simple_exp=simple_exp, gaussian_t=gaussian_t)
