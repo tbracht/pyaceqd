@@ -78,15 +78,16 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
     ts.append(np.arange(t0,intervals[0][0],dt_big))
     if simple_exp and len(intervals) == 1 and intervals[0][1] != 0:
         if gaussian_t: 
-            t_gaussian = get_gaussian_t(intervals[0][0],intervals[0][1],pulses,dt_max=dt_big,dt_min=dt_small,interval_per_step=0.05)
+            # interval_per_step: "1/steps per pi pulse area"
+            t_gaussian = get_gaussian_t(intervals[0][0],intervals[0][1],*pulses,dt_max=dt_big,dt_min=dt_small,interval_per_step=0.05)
             ts.append(t_gaussian)
         else:
             ts.append(np.arange(intervals[0][0],intervals[0][1],dt_small))
         _exp_part = np.exp(np.arange(np.log(intervals[0][1]),np.log(tend),dt_small))
+        # make sure that there are no crazy numbers, round the exponentially spaced part to 2 decimals. somehow this seems to work best
+        # even better than rounding to the step-size dt_small
         ts.append(np.round(_exp_part))
         ts.append(np.array([tend]))
-        # make sure that there are no crazy numbers, round to 2 decimals. somehow this seems to work best
-        # even better than rounding to the step-size dt_small
         return np.concatenate(ts,axis=0)  # np.round(np.concatenate(ts,axis=0), decimals=2)  
     for i in range(len(intervals)):
         if i > 0:

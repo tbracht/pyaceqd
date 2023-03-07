@@ -1,69 +1,42 @@
 import re
 import numpy as np
-import matplotlib.pyplot as plt
-from pyaceqd.tools import export_csv
 from pyaceqd.tools import construct_t, simple_t_gaussian
+from pyaceqd.timebin.timebin import TimeBin
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
-import os
 
 # exemplary options-dict:
 options_example = {"verbose": False, "delta_xd": 4, "gamma_e": 1/65, "lindblad": True,
  "temp_dir": '/mnt/temp_data/', "phonons": False, "pt_file": "tls_dark_3.0nm_4k_th10_tmem20.48_dt0.02.ptr"}
 
-class OnePhotonTimebin():
+class OnePhotonTimebin(TimeBin):
     def __init__(self, system, sigma_x, *pulses, dt=0.02, tb=800, simple_exp=True, gaussian_t=None, verbose=False, workers=15, options={}) -> None:
-        self.system = system  # system that is used for the simulation
-        self.dt = dt  # timestep during simulation
-        self.options = options
-        self.options["dt"] = dt  # also save it in the options dict
-        self.tb = tb  # timebin width
-        self.simple_exp = simple_exp  # use exponential timestepping
-        self.gaussian_t = gaussian_t  # use gaussian timestepping during pulse
-        self.pulses = pulses
-        self.workers = workers  # number of threads spawned by ThreadPoolExecutor
-        try:
-            self.temp_dir = options["temp_dir"]
-        except KeyError:
-            print("temp_dir not included in options, setting to /mnt/temp_data/")
-            self.options["temp_dir"] = "/mnt/temp_data/"
-            self.temp_dir = self.options["temp_dir"]
-        self.prepare_pulsefile(verbose=verbose)
-        self.options["pulse_file_x"] = self.pulse_file_x  # put pulse files in options dict
-        self.options["pulse_file_y"] = self.pulse_file_y
+        super().__init__(system, *pulses, dt=dt, tb=tb, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, options=options)
         # prepare the operators used in output/multitime
         self.prepare_operators(sigma_x=sigma_x, verbose=verbose)
+        try:
+            self.gamma_e = self.options["gamma_e"]
+        except KeyError:
+            print("gamma_e not supplied in options.")
+            exit(1)
 
     def calc_densitymatrix(self, first_abs=False, verbose=False):
         """
         if first_abs=True, takes the absolute value of the G1 function before integration. 
         this kills all phase-related effects.
         """
-        rho_ee = self.rho_ee()
-        rho_ll = self.rho_ll()
+        rho_ee = self.rho_ee() * self.gamma_e
+        rho_ll = self.rho_ll() * self.gamma_e
         norm = rho_ee+rho_ll  # for normalization (trace of the density matrix)
         t1, rho_el_g1 = self.rho_el()
         rho_el = np.abs(np.trapz(rho_el_g1,t1))
         if first_abs:
             rho_el = np.trapz(np.abs(rho_el_g1),t1)
+        rho_el = rho_el * self.gamma_e
         if verbose:
             print("ee:{}, ll:{}, el:{}".format(rho_ee,rho_ll,rho_el))
             print("ee:{}, ll:{}, el:{}".format(rho_ee/norm,rho_ll/norm,rho_el/norm))
-        return rho_ee, rho_ll, rho_el
-
-    def prepare_pulsefile(self, verbose=False):
-        # 2*tb is the maximum simulation length, 0 is the start of the simulation
-        _t_pulse = np.arange(0,2.1*self.tb,step=self.dt/5)  # notice that for usual propagation, dt/10 is used
-        # different polarizations
-        self.pulse_file_x = self.temp_dir + "G1_pulse_x.dat"
-        self.pulse_file_y = self.temp_dir + "G1_pulse_y.dat"
-        pulse_x = np.zeros_like(_t_pulse, dtype=complex)
-        pulse_y = np.zeros_like(_t_pulse, dtype=complex)
-        for _p in self.pulses:
-            pulse_x = pulse_x + _p.polar_x*_p.get_total(_t_pulse)
-            pulse_y = pulse_y + _p.polar_y*_p.get_total(_t_pulse)
-        export_csv(self.pulse_file_x, _t_pulse, pulse_x.real, pulse_x.imag, precision=8, delimit=' ', verbose=verbose)
-        export_csv(self.pulse_file_y, _t_pulse, pulse_y.real, pulse_y.imag, precision=8, delimit=' ', verbose=verbose)
+        return rho_ee, rho_ll, rho_el, norm
 
     def prepare_operators(self, sigma_x, verbose=False):
         # for ex.: sigma = |g><x|, i.e., |0><1|_2
@@ -109,7 +82,7 @@ class OnePhotonTimebin():
             t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
         
         _G1 = np.zeros([len(t1)],dtype=complex)
-        with tqdm.tqdm(total=len(t1)) as tq:
+        with tqdm.tqdm(total=len(t1),leave=None) as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
                 for i in range(len(t1)):
@@ -129,7 +102,3 @@ class OnePhotonTimebin():
                 # pgx
                 _G1[i] = futures[i][1][-1]
         return t1, _G1
-
-    def __del__(self):
-        os.remove(self.pulse_file_x)
-        os.remove(self.pulse_file_y)
