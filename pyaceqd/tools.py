@@ -97,7 +97,7 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
     ts.append(np.array([tend]))
     return np.concatenate(ts,axis=0)
 
-def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses):
+def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2):
     """
     uses gaussian timespacing from t0,...,texp, then exponential timespacing from
     texp,...,tend
@@ -108,7 +108,7 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses):
     t_exp = np.exp(np.arange(np.log(texp-t0),np.log(tend-t0),dt_small))+t0
     ts.append(t_exp)
     ts.append(np.array([tend]))
-    return np.round(np.concatenate(ts,axis=0), decimals=2)  
+    return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
 
 def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
     """
