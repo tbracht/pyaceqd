@@ -11,7 +11,7 @@ from pyaceqd.general_system.general_system import system_ace, system_ace_stream
 hbar = 0.6582173  # meV*ps
 
 def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, ninterm=10, pulse_file=None, threshold="7", prepare_only=False, stream=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"]):
+         multitime_op=None, ninterm=10, pulse_file=None, threshold="7", prepare_only=False, stream=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], LO_params=None):
     system_prefix = "tls"
     system_op = None
     boson_op = "1*|1><1|_2"
@@ -27,7 +27,7 @@ def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate
     if stream:
         result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params)
     else:
         result = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix,\
                       multitime_op=multitime_op, nintermediate=ninterm, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=threshold,\

@@ -181,7 +181,7 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
 
 def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False):
+                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None):
     """
     ACE_stream: separate calculation for the process tensor, which can be used to simulate way longer time scales.
     """
@@ -267,6 +267,12 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
                 for _op in lindblad_ops:
                     # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
                     f.write("add_Lindblad {:.5f}  {{ {} }}\n".format(_op[1],_op[0]))  
+            # single modes
+            if LO_params is not None:
+                for _LO_param in LO_params:
+                    _energy = _LO_param[0]
+                    _coupling = _LO_param[1]
+                    f.write("add_single_mode {{ {}*(Id_2 otimes n_3) + {}*(|1><1|_2 otimes bdagger_3 + |1><1|_2 otimes b_3)}} {{|0><0|_3}}\n".format(_energy,_coupling))
             # pulse interaction
             if interaction_ops is not None:
                 for _op in interaction_ops:
