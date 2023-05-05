@@ -19,7 +19,7 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
     lindblad_ops = []
     if lindblad:
         if gamma_b is None:
-            gamma_b = 2*gamma_e
+            gamma_b = gamma_e
         lindblad_ops = [["|0><1|_4",gamma_e],["|0><2|_4",gamma_e],
                         ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
     interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
@@ -38,7 +38,7 @@ def biexciton_(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1
     lindblad_ops = []
     if lindblad:
         if gamma_b is None:
-            gamma_b = 2*gamma_e
+            gamma_b = gamma_e
         lindblad_ops = [["|0><1|_4",gamma_e],["|0><2|_4",gamma_e],
                         ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
     interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
@@ -48,7 +48,7 @@ def biexciton_(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1
                       system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
-def biexciton_ace(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=2/100, phonons=False, generate_pt=False, t_mem=10, threshold="7",ae=3.0, temperature=4,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton_ace(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=1/100, phonons=False, generate_pt=False, t_mem=10, threshold="7",ae=3.0, temperature=4,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op_l=None, apply_op_t=0):
     tmp_file = temp_dir + "biex{}.param".format(suffix)
     out_file = temp_dir + "biex{}.out".format(suffix)
