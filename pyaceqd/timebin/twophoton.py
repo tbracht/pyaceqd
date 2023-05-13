@@ -18,7 +18,7 @@ class TwoPhotonTimebin(TimeBin):
         self.gamma_e = options["gamma_e"]
         self.prepare_operators(sigma_gx=sigma_gx, sigma_xb=sigma_xb, verbose=verbose)
         if self.gaussian_t is not None:
-            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,10*dt_small,*self.pulses)
+            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,10*dt_small,*self.pulses,decimals=1)
         else:
             self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
 
@@ -33,7 +33,7 @@ class TwoPhotonTimebin(TimeBin):
         # ee_xx
         _,_,density_matrix[0,1] = self.rho_ee_el()
         density_matrix[1,0] = np.conj(density_matrix[0,1])
-        _,_,density_matrix[0,2] = self.rho_ee_le()
+        density_matrix[0,2] = 0 # self.rho_ee_le()
         density_matrix[2,0] = np.conj(density_matrix[0,2])
         _,_,density_matrix[0,3] = self.rho_ee_ll()
         density_matrix[3,0] = np.conj(density_matrix[0,3])
@@ -301,7 +301,7 @@ class TwoPhotonTimebin(TimeBin):
         return t1,_G2, np.trapz(_G2, t1)*self.gamma_e**2
 
     # the remaining three ee_xx
-    def rho_ee_ll(self):
+    def rho_ee_ll(self, plot_g2=False):
         """
         correlations between EE and LL states. this includes four different times, but we only have two 'time-axes',
         and one of those always starts at the end of the other. This allows us to calculate the correlation functions
@@ -318,6 +318,8 @@ class TwoPhotonTimebin(TimeBin):
         
         t1 = self.t1 
         _G2 = np.zeros([len(t1)], dtype=complex)
+        if plot_g2:
+            _g2plot = np.zeros([len(t1),len(t1)], dtype=complex)
         # loop over t1
         for i in tqdm.trange(len(t1),leave=None):
             # tau1: use the interval 0,...,tb-t1
@@ -363,11 +365,62 @@ class TwoPhotonTimebin(TimeBin):
             temp_t2 = np.zeros_like(t2_array)
             # p_gb, taking the abs. value eradicates any phase, i.e., we only get the abs. value of the dens. matrix
             temp_t2[0] = np.abs(futures[0][2][-1])
+            if plot_g2: 
+                _g2plot[i,0] = futures[0][2][-1]
             for k in range(1,len(t2_array)):
                 # pgx
                 temp_t2[k] = np.abs(futures[k][1][-1])
+                if plot_g2:
+                    _g2plot[i,k] = futures[k][1][-1]
             _G2[i] = np.trapz(temp_t2, t2_array)
+        if plot_g2:
+            return t1,_g2plot
         return t1, _G2, np.abs(np.trapz(_G2, t1))*self.gamma_e**2
+
+    def rho_ee_ll_debug(self):
+        """
+        just the j=0 case, in which phase-errors occured due to numerical artifacts.
+        """
+        output_ops = [self.sigma_x, self.gb_op]
+
+        sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
+        sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
+        sigma_b = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
+        
+        t1 = self.t1 
+        _G2 = np.zeros([len(t1)], dtype=complex)
+        # loop over t1
+        with tqdm.tqdm(total=len(t1), leave=None) as tq:
+            futures = []
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                for i in range(len(t1)):
+                    # j=0 is a special case that has to be addressed: here, |XX><G| has to be applied at t=t1
+                    # this is addressed by taking care to use the correct order of operators in the parameter file
+                    # if the time is the same, the order in the param file is the order that is used to apply the operators
+                    _t1 = t1[i]
+                    _t2 = t1[i]
+                    _t3 = _t1 + self.tb
+                    _t4_end = _t2 + self.tb
+                    sigma_bdag_new = dict(sigma_bdag)
+                    sigma_xdag_new = dict(sigma_xdag)
+                    sigma_b_new = dict(sigma_b)
+                    # add correct times
+                    sigma_bdag_new["time"] = _t1
+                    sigma_xdag_new["time"] = _t2
+                    sigma_b_new["time"] = _t3
+                    # the order of the operators is important to catch the special case where t1=t2
+                    # because then ACE applies the operator first, that is first in the parameter file
+                    multitime_op_new = [sigma_bdag_new,sigma_xdag_new,sigma_b_new]
+                    _e = executor.submit(self.system,0,_t4_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+            for k in range(len(futures)):
+            # futures are still 'future' objects
+                futures[k] = futures[k].result()
+            # p_gb
+            for i in range(len(futures)):
+                _G2[i] = futures[i][2][-1]
+        return t1, _G2
 
     def rho_ee_el(self):
         output_ops = [self.sigma_x]
@@ -495,9 +548,7 @@ class TwoPhotonTimebin(TimeBin):
                 with ThreadPoolExecutor(max_workers=self.workers) as executor:
                     # loop over t2: starts at t1
                     for j in range(len(t1)-i):
-                        # j=0 is a special case that has to be addressed: here, |XX><G| has to be applied at t=t1
-                        # this is addressed by taking care to use the correct order of operators in the parameter file
-                        # if the time is the same, the order in the param file is the order that is used to apply the operators
+                        # j=0 is a special case that has to be addressed: here, <|X><B|> has to be taken at t=t1
                         _t2 = _t1 + self.tb
                         _t3_end = t1[j+i] + self.tb
 
@@ -509,29 +560,62 @@ class TwoPhotonTimebin(TimeBin):
                         # the order of the operators is important to catch the special case where t1=t2
                         # because then ACE applies the operator first, that is first in the parameter file
                         multitime_op_new = [sigma_bdag_new,sigma_b_new]
-                        # support for additional offset
-                        #if _t3 >= self.tb and _t4_end <= 2*self.tb:
                         _e = executor.submit(self.system,0,_t3_end,multitime_op=multitime_op_new, suffix=j, output_ops=output_ops, **self.options)
                         _e.add_done_callback(lambda f: tq.update())
                         futures.append(_e)
-                        #else:
-                        #    # print("_t3:{:.4f}, _t4_end:{:.4f}".format(_t3, _t4_end))
-                        #    _e = executor.submit(lambda: np.zeros([3,1]))
-                        #    _e.add_done_callback(lambda f: tq.update())
-                        #    futures.append(_e)
             for k in range(len(futures)):
                 # futures are still 'future' objects
                 futures[k] = futures[k].result()
             # futures now contains t,x,pxb for every j
             t2_array = t1[i:]  # array for the second time-axis
             temp_t2 = np.zeros_like(t2_array)
-            # p_xb, taking the abs. value eradicates any phase, i.e., we only get the abs. value of the dens. matrix
+            # p_xb, j=0 special case
             temp_t2[0] = np.abs(futures[0][2][-1])
             for k in range(1,len(t2_array)):
-                # xx
+                # x
                 temp_t2[k] = np.abs(futures[k][1][-1])
             _G2[i] = np.trapz(temp_t2, t2_array)
         return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+
+    def rho_el_ll_debug(self):
+        # j=0 special case 
+        output_ops = [self.x_op, self.sigma_b]
+        sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
+        sigma_b = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
+
+        t1 = self.t1 
+        _G2 = np.zeros([len(t1)], dtype=complex)
+        _g20 = np.zeros_like(_G2)
+        # loop over t1
+        with tqdm.tqdm(total=len(t1), leave=None) as tq:
+            futures = []
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                for i in range(len(t1)):
+                # tau1: use the interval 0,...,tb-t1
+                # i.e., if t1 = 0,...,tx then tau1 expands to absolute times of tx,...,tb
+                    _t1 = t1[i]
+                    # j=0 is a special case that has to be addressed: here, <|X><B|> has to be taken at t=t1
+                    _t2 = _t1 + self.tb
+                    _t3_end = t1[i] + self.tb
+
+                    sigma_bdag_new = dict(sigma_bdag)
+                    sigma_b_new = dict(sigma_b)
+                        # add correct times
+                    sigma_bdag_new["time"] = _t1
+                    sigma_b_new["time"] = _t2
+                        # the order of the operators is important to catch the special case where t1=t2
+                        # because then ACE applies the operator first, that is first in the parameter file
+                    multitime_op_new = [sigma_bdag_new,sigma_b_new]
+                    _e = executor.submit(self.system,0,_t3_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+            for k in range(len(futures)):
+                # futures are still 'future' objects
+                futures[k] = futures[k].result()
+            # futures now contains t,x,pxb for every j
+            # p_xb, j=0 special case
+            _g20[i] = futures[0][2][-1]
+        return t1, _g20
 
     # the remaining le_ll
 

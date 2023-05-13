@@ -23,7 +23,7 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
     return E_X, E_Y, E_S, E_F, E_B
 
 def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4"):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_6","|1><1|_6","|2><2|_6","|3><3|_6"], initial="|0><0|_6"):
     system_prefix = "sixls_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = S, |4> = F, |5> = B
     E_X, E_Y, E_S, E_F, E_B = energies_linear(delta_B=delta_b)
@@ -40,10 +40,10 @@ def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamm
     lindblad_ops = []
     if lindblad:
         if gamma_b is None:
-            gamma_b = 2*gamma_e
+            gamma_b = gamma_e
         lindblad_ops = [["|0><1|_6",gamma_e],["|0><2|_6",gamma_e],
                         ["|1><5|_6",gamma_b],["|2><5|_6",gamma_b]]
-    interaction_ops = [["|1><0|_4+|5><1|_4","x"],["|2><0|_4+|5><2|_4","y"]]
+    interaction_ops = [["|1><0|_6+|5><1|_6","x"],["|2><0|_6+|5><6|_4","y"]]
     
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,

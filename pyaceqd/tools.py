@@ -97,7 +97,7 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
     ts.append(np.array([tend]))
     return np.concatenate(ts,axis=0)
 
-def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2):
+def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2, exp_part=True):
     """
     uses gaussian timespacing from t0,...,texp, then exponential timespacing from
     texp,...,tend
@@ -105,8 +105,11 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimal
     ts = []
     t_gaussian = get_gaussian_t(t0,texp,*pulses,dt_max=dt_big,dt_min=dt_small,interval_per_step=0.05)
     ts.append(t_gaussian)
-    t_exp = np.exp(np.arange(np.log(texp-t0),np.log(tend-t0),dt_small))+t0
-    ts.append(t_exp)
+    if exp_part:
+        t_exp = np.exp(np.arange(np.log(texp-t0),np.log(tend-t0),dt_small))+t0
+        ts.append(t_exp)
+    else:
+        ts.append(np.arange(texp,tend,10*dt_small))
     ts.append(np.array([tend]))
     return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
 
@@ -139,3 +142,10 @@ def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
         print("TypeError occured")
         for arguments in arg:
             print(arguments)
+
+def concurrence(rho):
+        T_matrix = np.diag([-1.,1.,1.,-1.])
+        M_matrix = np.dot(rho,np.dot(T_matrix,np.dot(np.conjugate(rho),T_matrix)))
+        _eigvals = np.real(np.linalg.eigvals(M_matrix))
+        _eigvals = np.sqrt(np.sort(_eigvals))
+        return np.max([0.0,_eigvals[-1]-np.sum(_eigvals[:-1])])
