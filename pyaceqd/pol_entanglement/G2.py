@@ -163,15 +163,15 @@ class PolarizatzionEntanglement():
         density_matrix = np.zeros([4,4], dtype=complex)
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
-            op23s = [[self.axdag + " * " + self.ax], [self.axdag + " * " + self.ay],[self.aydag + " * " + self.ay]]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
             G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
             tq.update()
             # XX,YX; XX,YY; XY,YX; XY,YY
-            op23s = [[self.axdag + " * " + self.ax], [self.axdag + " * " + self.ay],[self.aydag + " * " + self.ax],[self.aydag + " * " + self.ay]]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
             G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
             tq.update()
             # YX,YX; YX,YY; YY,YY
-            op23s = [[self.axdag + " * " + self.ax], [self.axdag + " * " + self.ay],[self.aydag + " * " + self.ay]]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
             G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
             tq.update()
 
@@ -252,7 +252,7 @@ class PolarizatzionEntanglement():
                     # here, we want the <op2*op3>-values for every t2=t1,..,tend
                     if n_t2 > 0: 
                         temp_t2[j,1:n_t2+1] = futures[i][1+j][-n_t2:]
-                t_new = t2[:len(temp_t2)]
+                t_new = t2[:n_t2+1]
                 # integrate over t_new
                 for j in range(len(op23s_ttau)):
                     _G2[j,i] = np.trapz(temp_t2[j],t_new)
