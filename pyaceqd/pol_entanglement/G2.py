@@ -175,24 +175,24 @@ class PolarizatzionEntanglement():
             G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
             tq.update()
 
-            _,_,density_matrix[0,0] = np.abs(G2_1[0])  # xx,xx
-            _,_,density_matrix[3,3] = np.abs(G2_3[2])  # yy,yy
-            _,_,density_matrix[1,1] = np.abs(G2_1[2])  # xy,xy
-            _,_,density_matrix[2,2] = np.abs(G2_3[0])  # yx,yx
+            density_matrix[0,0] = np.abs(G2_1[0])  # xx,xx
+            density_matrix[3,3] = np.abs(G2_3[2])  # yy,yy
+            density_matrix[1,1] = np.abs(G2_1[2])  # xy,xy
+            density_matrix[2,2] = np.abs(G2_3[0])  # yx,yx
 
-            _,_,density_matrix[0,1] = G2_1[1]  # xx,xy
+            density_matrix[0,1] = G2_1[1]  # xx,xy
             density_matrix[1,0] = np.conj(density_matrix[0,1])
-            _,_,density_matrix[0,2] = G2_2[0]  # xx,yx
+            density_matrix[0,2] = G2_2[0]  # xx,yx
             density_matrix[2,0] = np.conj(density_matrix[0,2])
-            _,_,density_matrix[0,3] = G2_2[1]  # xx,yy
+            density_matrix[0,3] = G2_2[1]  # xx,yy
             density_matrix[3,0] = np.conj(density_matrix[0,3])
 
-            _,_,density_matrix[1,2] = G2_2[2]  # xy,yx
+            density_matrix[1,2] = G2_2[2]  # xy,yx
             density_matrix[2,1] = np.conj(density_matrix[1,2])
-            _,_,density_matrix[1,3] = G2_2[3]  # xy,yy
+            density_matrix[1,3] = G2_2[3]  # xy,yy
             density_matrix[3,1] = np.conj(density_matrix[1,3])
 
-            _,_,density_matrix[2,3] = G2_3[1]  # yx,yy
+            density_matrix[2,3] = G2_3[1]  # yx,yy
             density_matrix[3,2] = np.conj(density_matrix[2,3])
 
         norm = np.trace(density_matrix)
