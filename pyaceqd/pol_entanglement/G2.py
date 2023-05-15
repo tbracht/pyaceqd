@@ -164,15 +164,15 @@ class PolarizatzionEntanglement():
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
-            G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
+            _,_,G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
             tq.update()
             # XX,YX; XX,YY; XY,YX; XY,YY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
-            G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
+            _,_,G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
             tq.update()
             # YX,YX; YX,YY; YY,YY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
-            G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
+            _,_,G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
             tq.update()
 
             density_matrix[0,0] = np.abs(G2_1[0])  # xx,xx
