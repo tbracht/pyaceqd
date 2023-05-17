@@ -13,7 +13,7 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4"):
     system_prefix = "b_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = B
-    system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|2><2|_4".format(delta_xy)]
+    system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|1><1|_4".format(delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
     boson_op = "1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4"
     lindblad_ops = []
     if lindblad:
@@ -32,7 +32,7 @@ def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, ga
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2"):
     system_prefix = "b_linear_cavity"
     # |0> = G, |1> = X, |2> = Y, |3> = B
-    system_op = ["-{}*|3><3|_4 otimes Id_2 otimes Id_2".format(delta_b),"-{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy)]
+    system_op = ["-{}*|3><3|_4 otimes Id_2 otimes Id_2".format(delta_b),"-{}*|1><1|_4 otimes Id_2 otimes Id_2".format(delta_xy/2),"{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy/2)]
     boson_op = "|1><1|_4 otimes Id_2 otimes Id_2 + |2><2|_4 otimes Id_2 otimes Id_2 + 2*|3><3|_4 otimes Id_2 otimes Id_2"
     lindblad_ops = []
     # QD decay outside of the cavity
