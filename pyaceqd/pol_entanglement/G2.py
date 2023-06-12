@@ -3,6 +3,7 @@ import os
 from pyaceqd.tools import export_csv, construct_t, concurrence, simple_t_gaussian
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
+import matplotlib.pyplot as plt
 
 class PolarizatzionEntanglement():
     def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, verbose=False, workers=2, options={}) -> None:
@@ -159,20 +160,20 @@ class PolarizatzionEntanglement():
                 _G2[i] = np.trapz(temp_t2,t_new)
         return t1, _G2, np.trapz(_G2,t1)
     
-    def calc_densitymatrix_reuse(self):
+    def calc_densitymatrix_reuse(self, plot_G2=False, return_counts=False):
         density_matrix = np.zeros([4,4], dtype=complex)
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
-            _,_,G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
+            t1, G2_1_tau, G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
             tq.update()
             # XX,YX; XX,YY; XY,YX; XY,YY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
-            _,_,G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
+            t2, G2_2_tau, G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
             tq.update()
             # YX,YX; YX,YY; YY,YY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
-            _,_,G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
+            t3, G2_3_tau, G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
             tq.update()
 
             density_matrix[0,0] = np.abs(G2_1[0])  # xx,xx
@@ -196,8 +197,23 @@ class PolarizatzionEntanglement():
             density_matrix[3,2] = np.conj(density_matrix[2,3])
 
         norm = np.trace(density_matrix)
-        density_matrix = density_matrix / norm
-        return concurrence(density_matrix)
+
+        if plot_G2:
+            plt.clf()
+            plt.plot(t1, np.real(G2_1_tau[0]), label="xx,xx")
+            plt.plot(t1, np.real(G2_1_tau[2]), label="xy,xy")
+            plt.plot(t2, np.abs(G2_2_tau[1]), label="xx,yy")
+            plt.plot(t3, np.abs(G2_3_tau[0]), dashes=[4,4],label="yx,yx")
+            plt.plot(t3, np.abs(G2_3_tau[2]), dashes=[4,4],label="yy,yy")
+            plt.xlabel("tau (ps)")
+            plt.ylabel("G2(tau)")
+            plt.legend()
+            plt.savefig("G2_tau.png")
+
+        if return_counts:
+            return concurrence(density_matrix/norm), density_matrix[0,0], density_matrix[1,1], density_matrix[2,2], density_matrix[3,3], density_matrix[0,3]
+        
+        return concurrence(density_matrix/norm)
     
     def G2_reuse(self, op1_t, op23s_ttau, op4_t):
         """
