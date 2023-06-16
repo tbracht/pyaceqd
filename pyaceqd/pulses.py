@@ -126,3 +126,20 @@ class CWLaser(Pulse):
 
     def get_envelope(self, t):
         return self.e0
+
+class SmoothRectangle(Pulse):
+    """
+    Rectangular pulse that is switched on/off with a sigmoid shape.
+
+    """
+
+    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, alpha_onoff=0.1, polar_x=1):
+        self.alpha = 1/alpha_onoff  # switch on/off time
+        super().__init__(tau, e_start, w_gain=w_gain, t0=t0, e0=e0, phase=phase, polar_x=polar_x)
+
+    def get_envelope_f(self):
+        return lambda t: self.e0/( (1+np.exp(-self.alpha*(t+self.tau/2 - self.t0))) * (1+np.exp(-self.alpha*(-t+self.tau/2 + self.t0))) )
+
+    def get_envelope(self, t):
+        return self.e0/( (1+np.exp(-self.alpha*(t+self.tau/2 - self.t0))) * (1+np.exp(-self.alpha*(-t+self.tau/2 + self.t0))) )
+    

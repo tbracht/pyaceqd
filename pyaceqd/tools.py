@@ -144,7 +144,7 @@ def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
             print(arguments)
 
 def concurrence(rho):
-        T_matrix = np.diag([-1.,1.,1.,-1.])
+        T_matrix = np.flip(np.diag([-1.,1.,1.,-1.]),axis=1)  # antidiagonal matrix
         M_matrix = np.dot(rho,np.dot(T_matrix,np.dot(np.conjugate(rho),T_matrix)))
         _eigvals = np.real(np.linalg.eigvals(M_matrix))
         _eigvals = np.sqrt(np.sort(_eigvals))
