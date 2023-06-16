@@ -160,7 +160,7 @@ class PolarizatzionEntanglement():
                 _G2[i] = np.trapz(temp_t2,t_new)
         return t1, _G2, np.trapz(_G2,t1)
     
-    def calc_densitymatrix_reuse(self, plot_G2=False, return_counts=False):
+    def calc_densitymatrix_reuse(self, plot_G2=None, return_counts=False, return_rho=False):
         density_matrix = np.zeros([4,4], dtype=complex)
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
@@ -198,7 +198,7 @@ class PolarizatzionEntanglement():
 
         norm = np.trace(density_matrix)
 
-        if plot_G2:
+        if plot_G2 is not None:
             plt.clf()
             plt.plot(t1, np.real(G2_1_tau[0]), label="xx,xx")
             plt.plot(t1, np.real(G2_1_tau[2]), label="xy,xy")
@@ -208,8 +208,9 @@ class PolarizatzionEntanglement():
             plt.xlabel("tau (ps)")
             plt.ylabel("G2(tau)")
             plt.legend()
-            plt.savefig("G2_tau.png")
-
+            plt.savefig("{}.png".format(plot_G2))
+        if return_rho:
+            return concurrence(density_matrix/norm), density_matrix
         if return_counts:
             return concurrence(density_matrix/norm), density_matrix[0,0], density_matrix[1,1], density_matrix[2,2], density_matrix[3,3], density_matrix[0,3]
         

@@ -149,3 +149,16 @@ def concurrence(rho):
         _eigvals = np.real(np.linalg.eigvals(M_matrix))
         _eigvals = np.sqrt(np.sort(_eigvals))
         return np.max([0.0,_eigvals[-1]-np.sum(_eigvals[:-1])])
+
+def serialize_dm(rho):
+    """
+    serializes a density matrix into a vector, splitting real and imag parts
+    """
+    return np.concatenate((np.real(rho).flatten(),np.imag(rho).flatten()))
+
+def deserialize_dm(rho):
+    """
+    deserializes a density matrix from a vector
+    """
+    dim = int(np.sqrt(len(rho)/2))
+    return rho[:dim**2].reshape((dim,dim)) + 1j*rho[dim**2:].reshape((dim,dim))
