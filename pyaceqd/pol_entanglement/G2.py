@@ -205,8 +205,8 @@ class PolarizatzionEntanglement():
             plt.plot(t2, np.abs(G2_2_tau[1]), label="xx,yy")
             plt.plot(t3, np.abs(G2_3_tau[0]), dashes=[4,4],label="yx,yx")
             plt.plot(t3, np.abs(G2_3_tau[2]), dashes=[4,4],label="yy,yy")
-            plt.xlabel("tau (ps)")
-            plt.ylabel("G2(tau)")
+            plt.xlabel("t (ps)")
+            plt.ylabel("G2(t)")
             plt.legend()
             plt.savefig("{}.png".format(plot_G2))
         if return_rho:
