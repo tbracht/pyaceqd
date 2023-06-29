@@ -11,7 +11,7 @@ hbar = 0.6582173  # meV*ps
 def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, gamma_e=1/65, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_3","|1><1|_3","|2><2|_3"], initial="|0><0|_3"):
     system_prefix = "tls_dark"
-    # |0> = G, |1> = X, |2> = D, |3> = B
+    # |0> = G, |1> = X, |2> = D
     system_op = ["{}*|2><2|_3".format(-delta_xd)]
     # system_op = ["{}*|1><1|_4".format(delta_b*0.5),"{}*|2><2|_4".format(delta_b*0.5-delta_xd)]
     boson_op = "|1><1|_3 + |2><2|_3"
@@ -20,15 +20,38 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, gamma_e=1/65, phonons
     if lindblad:
         lindblad_ops = [["|0><1|_3",gamma_e]]  #  |2> is dark, does not decay 
     # we use 'x'-polar for coupling between G and D, as well as X and D.
-    interaction_ops = [["|2><0|_3","x"],["|1><2|_3","x"],["|0><1|_3","y"]]
+    interaction_ops = [["|2><0|_3","x"],["|1><2|_3","x"],["|1><0|_3","y"]]
     
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
-def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, normalize=False, phonons=False, pt_file=None):
-    t,g,x,d = darkmodel(t0,tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file)
+def darkmodel_photons(t_start, t_end, *pulses, dt=0.1, delta_xd=0, delta_cx=-2, rad_loss=1/100, cav_loss=1/20, cav_coupl=1/30, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_3 otimes |0><0|_3","|1><1|_3 otimes |0><0|_3","|2><2|_3 otimes |0><0|_3"], initial="|0><0|_3 otimes |0><0|_3"):
+    system_prefix = "darkmodel_tls_photons"
+    # |0> = G, |1> = X, |2> = D
+    system_op = ["{}*|2><2|_3 otimes Id_3".format(-delta_xd)]
+    boson_op = "|1><1|_3 otimes Id_3 + |2><2|_3 otimes Id_3"
+    lindblad_ops = []
+    if lindblad:
+        # radiative decay of dot, outside the cavity
+        lindblad_ops = [["|0><1|_3 otimes Id_3",rad_loss]]  #  |2> is dark, does not decay 
+    # interaction with laser
+    interaction_ops = [["|2><0|_3 otimes Id_3","x"],["|1><2|_3 otimes Id_3","x"],["|1><0|_3 otimes Id_3","y"]]
+    # cavity decay
+    lindblad_ops.append(["Id_3 otimes b_3",cav_loss])
+    # cavity detuning
+    system_op.append(" {} * (Id_3 otimes n_3)".format(delta_cx))
+    # cavity-qd coupling
+    system_op.append("{}*(|1><0|_3 otimes b_3 + |0><1|_3 otimes bdagger_3 )".format(hbar*cav_coupl))
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+    return result
+
+def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, normalize=False, phonons=False, pt_file=None, prepare_only=False):
+    t,g,x,d = darkmodel(t0,tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file,prepare_only=prepare_only)
     x = np.real(x)
     t = np.real(t)
     rho_ee = np.trapz(x,t)

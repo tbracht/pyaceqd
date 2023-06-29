@@ -78,15 +78,16 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
     ts.append(np.arange(t0,intervals[0][0],dt_big))
     if simple_exp and len(intervals) == 1 and intervals[0][1] != 0:
         if gaussian_t: 
-            t_gaussian = get_gaussian_t(intervals[0][0],intervals[0][1],pulses,dt_max=dt_big,dt_min=dt_small,interval_per_step=0.05)
+            # interval_per_step: "1/steps per pi pulse area"
+            t_gaussian = get_gaussian_t(intervals[0][0],intervals[0][1],*pulses,dt_max=dt_big,dt_min=dt_small,interval_per_step=0.05)
             ts.append(t_gaussian)
         else:
             ts.append(np.arange(intervals[0][0],intervals[0][1],dt_small))
         _exp_part = np.exp(np.arange(np.log(intervals[0][1]),np.log(tend),dt_small))
+        # make sure that there are no crazy numbers, round the exponentially spaced part to 2 decimals. somehow this seems to work best
+        # even better than rounding to the step-size dt_small
         ts.append(np.round(_exp_part))
         ts.append(np.array([tend]))
-        # make sure that there are no crazy numbers, round to 2 decimals. somehow this seems to work best
-        # even better than rounding to the step-size dt_small
         return np.concatenate(ts,axis=0)  # np.round(np.concatenate(ts,axis=0), decimals=2)  
     for i in range(len(intervals)):
         if i > 0:
@@ -96,7 +97,7 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
     ts.append(np.array([tend]))
     return np.concatenate(ts,axis=0)
 
-def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses):
+def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2, exp_part=True):
     """
     uses gaussian timespacing from t0,...,texp, then exponential timespacing from
     texp,...,tend
@@ -104,10 +105,13 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses):
     ts = []
     t_gaussian = get_gaussian_t(t0,texp,*pulses,dt_max=dt_big,dt_min=dt_small,interval_per_step=0.05)
     ts.append(t_gaussian)
-    t_exp = np.exp(np.arange(np.log(texp-t0),np.log(tend-t0),dt_small))+t0
-    ts.append(t_exp)
+    if exp_part:
+        t_exp = np.exp(np.arange(np.log(texp-t0),np.log(tend-t0),dt_small))+t0
+        ts.append(t_exp)
+    else:
+        ts.append(np.arange(texp,tend,10*dt_small))
     ts.append(np.array([tend]))
-    return np.round(np.concatenate(ts,axis=0), decimals=2)  
+    return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
 
 def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
     """
@@ -138,3 +142,23 @@ def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
         print("TypeError occured")
         for arguments in arg:
             print(arguments)
+
+def concurrence(rho):
+        T_matrix = np.flip(np.diag([-1.,1.,1.,-1.]),axis=1)  # antidiagonal matrix
+        M_matrix = np.dot(rho,np.dot(T_matrix,np.dot(np.conjugate(rho),T_matrix)))
+        _eigvals = np.real(np.linalg.eigvals(M_matrix))
+        _eigvals = np.sqrt(np.sort(_eigvals))
+        return np.max([0.0,_eigvals[-1]-np.sum(_eigvals[:-1])])
+
+def serialize_dm(rho):
+    """
+    serializes a density matrix into a vector, splitting real and imag parts
+    """
+    return np.concatenate((np.real(rho).flatten(),np.imag(rho).flatten()))
+
+def deserialize_dm(rho):
+    """
+    deserializes a density matrix from a vector
+    """
+    dim = int(np.sqrt(len(rho)/2))
+    return rho[:dim**2].reshape((dim,dim)) + 1j*rho[dim**2:].reshape((dim,dim))

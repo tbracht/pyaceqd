@@ -2,7 +2,7 @@ import subprocess
 import numpy as np
 import os
 from pyaceqd.tools import export_csv
-
+from pyaceqd.general_system.general_system import system_ace_stream
 
 d0 = 0.25  # meV
 d1 = 0.12
@@ -22,14 +22,40 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
     E_B = 2.*delta_E - delta_B
     return E_X, E_Y, E_S, E_F, E_B
 
-def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0, phonons=False, generate_pt=False, t_mem=10, ae=3, temperature=1, verbose=False, d0=0.25, d1=0.12, d2=0.05, temp_dir="/mnt/temp_data/"):
+def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_6","|1><1|_6","|2><2|_6","|3><3|_6"], initial="|0><0|_6"):
+    system_prefix = "sixls_linear"
+    # |0> = G, |1> = X, |2> = Y, |3> = S, |4> = F, |5> = B
+    E_X, E_Y, E_S, E_F, E_B = energies_linear(delta_B=delta_b)
+    system_op = ["{}*|1><1|_6 + {}*|2><2|_6 + {}*|3><3|_6 + {}*|4><4|_6 + {}*|5><5|_6".format(E_X,E_Y,E_S,E_F,E_B)]
+    # bright-dark coupling depending on Bx
+    if bx != 0:
+        system_op.append("{}*(|1><3|_6 + |3><1|_6 )".format(-0.5*mu_b*bx*(g_ex+g_hx)))
+        system_op.append("{}*(|2><4|_6 + |4><2|_6 )".format(-0.5*mu_b*bx*(g_ex-g_hx)))
+    # bright-bright and dark-dark coupling depending on Bz
+    if bz != 0.0:
+        system_op.append("-i*{}*(|2><1|_6 - |1><2|_6 )".format(-0.5*mu_b*bz*(g_ez-3*g_hz)))
+        system_op.append("-i*{}*(|4><3|_6 - |3><4|_6 )".format(+0.5*mu_b*bz*(g_ez+3*g_hz)))
+    boson_op = "1*(|1><1|_6+|2><2|_6+|3><3|_6+|4><4|_6) + 2*|5><5|_6"
+    lindblad_ops = []
+    if lindblad:
+        if gamma_b is None:
+            gamma_b = gamma_e
+        lindblad_ops = [["|0><1|_6",gamma_e],["|0><2|_6",gamma_e],
+                        ["|1><5|_6",gamma_b],["|2><5|_6",gamma_b]]
+    interaction_ops = [["|1><0|_6+|5><1|_6","x"],["|2><0|_6+|5><6|_4","y"]]
+    
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+    return result
+
+def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0, pulse_file_x=None, pulse_file_y=None, phonons=False, generate_pt=False, t_mem=10, ae=3, temperature=1, verbose=False, d0=0.25, d1=0.12, d2=0.05, temp_dir="/mnt/temp_data/"):
     # print(pulses)
     tmp_file = temp_dir + "sixls_linear.param"
     out_file = temp_dir + "sixls_linear.out"
     duration = np.abs(t_end)+np.abs(t_start)
     pt_file = "sixls_linear_generate_{}ps_{}K_{}nm.pt".format(duration,temperature,ae)
-    pulse_file_x = temp_dir + "sixls_linear_pulse_x.dat"
-    pulse_file_y = temp_dir + "sixls_linear_pulse_y.dat"
     t,g,x,y,s,f,b = 0,0,0,0,0,0,0
     # E_x, E_y, E_s, E_f, E_b = energies_linear(d0, d1, d2, delta_b, delta_E=0)
     E_x = 0.5*(d0+d1)
@@ -50,13 +76,19 @@ def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0,
         print("E_x:{:.4f}, E_y:{:.4f}, E_s:{:.4f}, E_f:{:.4f}, E_b:{:.4f}".format(E_xnew,E_y,E_s,E_f,E_b))
     try:
         t = np.arange(1.1*t_start,1.1*t_end,step=0.5*dt)
-        pulse_x = np.zeros_like(t, dtype=complex)
-        pulse_y = np.zeros_like(t, dtype=complex)
-        for _p in pulses:
-            pulse_x = pulse_x + _p.polar_x * _p.get_total(t)
-            pulse_y = pulse_y + _p.polar_y * _p.get_total(t)
-        export_csv(pulse_file_x, t, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
-        export_csv(pulse_file_y, t, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
+        if pulse_file_x is None:
+            pulse_file_x = temp_dir + "sixls_linear_pulse_x.dat"
+            pulse_file_y = temp_dir + "sixls_linear_pulse_y.dat"
+            pulse_x = np.zeros_like(t, dtype=complex)
+            pulse_y = np.zeros_like(t, dtype=complex)
+            for _p in pulses:
+                pulse_x = pulse_x + _p.polar_x * _p.get_total(t)
+                pulse_y = pulse_y + _p.polar_y * _p.get_total(t)
+            export_csv(pulse_file_x, t, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
+            export_csv(pulse_file_y, t, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
+        if pulse_file_y is None:
+            print("supply pulse_file_x and pulse_file_y")
+            exit(0)
         with open(tmp_file,'w') as f:
             f.write("ta    {}\n".format(t_start))
             f.write("te    {}\n".format(t_end))
@@ -139,4 +171,3 @@ def sixls_linear_general(t_start, t_end, *pulses, dt=0.1, delta_b=4, bx=0, bz=0,
         #         os.remove(out_file+"_scan{}".format(i))
         #         os.remove(pulse_file+"_scan{}".format(i))
     return t,g,x,y,s,f,b
-
