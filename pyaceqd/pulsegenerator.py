@@ -4,6 +4,8 @@ import pyaceqd.pulses as pulses
 import math as math
 from pyaceqd.tools import export_csv
 from scipy.io import savemat, loadmat
+from scipy import integrate
+from scipy import interpolate
 
 hbar = 0.6582173  # meV*ps
 
@@ -26,7 +28,7 @@ class PulseGenerator:
         self.temporal_representation_y = np.zeros_like(self.time, dtype=complex)
         self.frequency_representation_x = np.zeros_like(self.time, dtype=complex)
         self.frequency_representation_y = np.zeros_like(self.time, dtype=complex)
-
+        
         self.frequency_filter_x = np.zeros_like(self.time, dtype=complex)
         self.frequency_filter_y = np.zeros_like(self.time, dtype=complex)
         self.temporal_filter_x = np.zeros_like(self.time, dtype=complex)
@@ -67,7 +69,7 @@ class PulseGenerator:
         
         polar_x,polar_y = self._normalise_polarisation(polarisation)
         pulse = 1/self.dt*area_time*np.exp(-(self.frequencies-central_f)**2/(2*width_f**2))*np.exp(1j*self._Taylor(self.frequencies*2*np.pi,central_f*2*np.pi,coefficients=phase_taylor))
-        pulse *= np.exp(1j*2*np.pi*self.frequencies*shift_time)
+        pulse *= np.exp(1j*2*np.pi*self.frequencies*(shift_time-np.min(self.time)))
         pulse_x = pulse*polar_x
         pulse_y = pulse*polar_y
         self._add_spectral(pulse_x,pulse_y)
@@ -125,7 +127,7 @@ class PulseGenerator:
         self._add_filter(filter,polarisation,merging=merging)
         pass
 
-    def add_filter_gaussian(self, central_f, width_f, transmission = 1 ,super_gauss = 1,polarisation = 'b',field_int = 'field',sig_fwhm = 'sig', invert = False,merging = '+',unit = 'Hz'):
+    def add_filter_gaussian(self, central_f, width_f, transmission = 1 ,super_gauss = 1,polarisation = 'b',field_int = 'field',sig_fwhm = 'sig', invert = False,merging = '+',unit = 'Hz',phase = False):
         #gaussian filter
         #super_gauss allows for super gaussian functions 
         central_f = self._Units(central_f,unit)
@@ -137,7 +139,33 @@ class PulseGenerator:
         if invert:
             gauss = 1- gauss
 
-        self._add_filter(gauss,polarisation,merging=merging)
+        if phase:
+            apply_phase = np.exp(1j*gauss**1*np.pi*2.*transmission)
+            self._add_filter(apply_phase,polarisation,merging='*')
+        else:
+            self._add_filter(gauss,polarisation,merging=merging)
+        pass
+
+    def add_filter_make_square(self,T = 1,pol = 'x'):
+        frequ = self.frequencies*2*np.pi
+        spec_x = np.abs(self.frequency_representation_x**2)
+        spec_y = np.abs(self.frequency_representation_y**2)
+        
+        spec_x_norm = spec_x/integrate.trapz(np.abs(spec_x),frequ)
+        spec_y_norm = spec_y/integrate.trapz(np.abs(spec_y),frequ)
+        
+        spec_cum_x = T*integrate.cumtrapz(spec_x_norm,frequ,initial=0)
+        spec_cum_y = T*integrate.cumtrapz(spec_y_norm,frequ,initial=0)
+        
+        shift = T/2 #??
+        spec_cum_cum_x = integrate.cumtrapz(spec_cum_x-shift,frequ,initial=0)
+        spec_cum_cum_y = integrate.cumtrapz(spec_cum_y-shift,frequ,initial=0)   
+        
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'x':
+            self._add_filter(np.exp(1j*spec_cum_cum_x),pol='x',merging='*')
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'y':
+            self._add_filter(np.exp(1j*spec_cum_cum_y),pol='y',merging='*')
+        
         pass
 
     def add_filter_sigmoid(self,central_f,width_f,rise_f,transmission=1,polarisation = 'b',invert = False,merging = '+',unit = 'Hz'):
@@ -152,37 +180,64 @@ class PulseGenerator:
             sigm = 1-sigm
         self._add_filter(sigm,polarisation,merging)
 
-    def add_phase_filter(self,central_f = 0, phase_taylor=[], polarisation = 'b',unit = 'Hz'):
+    def add_phase_filter(self,central_f = 0, phase_taylor=[], polarisation = 'b',unit = 'Hz',f_start = None, f_end = None):
         # phase filter via Taylor expansion around central_f
+        if f_start is None:
+            f_start = np.min(self.frequencies)
+        else:
+            f_start = self._Units(f_start,unit)
+        if f_end is None:
+            f_end = np.max(self.frequencies)
+        else:
+            f_end = self._Units(f_end,unit)
+        
         central_f = self._Units(central_f,unit)
         
-        phase = np.exp(1j*self._Taylor(self.frequencies*2*np.pi,central_f*2*np.pi,coefficients=phase_taylor))
+        phase = self._Taylor(self.frequencies*2*np.pi,central_f*2*np.pi,coefficients=phase_taylor)
+        phase[self.frequencies < f_start] = 0
+        phase[self.frequencies > f_end] = 0
+        
+        phase = np.exp(1j*phase)
+        
+        
+        
         self._add_filter(phase,pol=polarisation,merging='*')
 
         pass
-    def add_phase_wedge(self, value, central_f = 0, shift_time = True, polarisation = 'b', unit = 'Hz'):
-        # phase wedge for shifting in time.
+    
+    
+    
+    def add_phase_wedge(self, time_shift, central_f = 0, shift_time = True, polarisation = 'b', unit = 'Hz',kind = 'double'):
+        # phase wedge for shifting in time
         central_f = self._Units(central_f,unit)
 
         if shift_time:
-            value = 2*np.pi*value
+            time_shift = 2*np.pi*time_shift
         else:
-            value = self._Units(value,unit)
+            time_shift = self._Units(time_shift,unit)
 
         if unit == 'nm':
-            value *= -1 
+            time_shift *= -1 
         
-        wedge = np.exp(1j*value*np.abs((self.frequencies-central_f)))
-
+        if kind.lower()[0] == 'd':
+            wedge = np.exp(1j*time_shift*np.abs((self.frequencies-central_f)))
+        elif kind.lower()[0] == 'r':
+            phase_vec = np.zeros_like(self.frequencies)
+            phase_vec[self.frequencies >= central_f] = np.abs(self.frequencies[self.frequencies >= central_f]-central_f)
+            wedge = np.exp(1j*time_shift*phase_vec)
+        elif kind.lower()[0] == 'l':    
+            phase_vec = np.zeros_like(self.frequencies)
+            phase_vec[self.frequencies <= central_f] = np.abs(self.frequencies[self.frequencies <= central_f]-central_f)
+            wedge = np.exp(1j*time_shift*phase_vec)
         self._add_filter(wedge,pol=polarisation,merging='*')
         pass
 
-    def apply_frequency_filter(self,pol = 'b'):
+    def apply_frequency_filter(self,pol = 'b'): #you changed the and part here 
         # applies the filter to the pulse 
-        if pol.lower()[0] == 'b' or pol.lower()[0] == 'x':
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'x' and np.any(self.frequency_representation_x != 0):
             self.frequency_representation_x *= self.frequency_filter_x
             self.temporal_representation_x = np.fft.ifft(np.fft.ifftshift(self.frequency_representation_x))
-        if pol.lower()[0] == 'b' or pol.lower()[0] == 'y':
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'y' and np.any(self.frequency_representation_y != 0):
             self.frequency_representation_y *= self.frequency_filter_y
             self.temporal_representation_y = np.fft.ifft(np.fft.ifftshift(self.frequency_representation_y))
         pass
@@ -205,7 +260,7 @@ class PulseGenerator:
             elif merging.lower()[0] == 'm': 
                 for i, value in enumerate(self.frequency_filter_y):
                     self.frequency_filter_y[i] = np.max([value,filter[i]])
-        if np.any(np.logical_or(self.frequency_filter_x > 1, self.frequency_filter_y > 1)): 
+        if np.any(np.logical_or(np.abs(self.frequency_filter_x) > 1, np.abs(self.frequency_filter_y) > 1)): 
             print('WARNING: Transmission in filter > 1. Capped to 1.')
             self.frequency_filter_x[self.frequency_filter_x > 1] = 1 
             self.frequency_filter_y[self.frequency_filter_y > 1] = 1 
@@ -214,30 +269,36 @@ class PulseGenerator:
                 
     def apply_SLM(self, pixelwidth = None, pixel_center = 0, N_pixel = 128, unit = 'Hz', kind = 'rectangle',polarisation = 'both',
                    SLM = 'amp',generate_mask = False, save_dir = '', mask_name = 'mask_output',
-                   loop = 0,psf_width = None,psf_sig_fwhm = 'fwhm',calibration_file = None, orientation = 'rising', N_real = None,
-                   pixel_transmission_mask = None):
+                   suffix = 0,psf_width = None,psf_sig_fwhm = 'fwhm',calibration_file = None, orientation = 'rising',
+                   pixel_transmission_mask = None, pixel_binning = 1):
         # applys a discretisation to the filter, simulating pixels of an (for now) amplitude SLM
         # N_pixel = # of pixels/discretisation steps
         # pixel_center is the position of the central pixel / for even N_pixel the central position 
         # setting generate_mask = True generates a driving mask, given that a callibration_file is specified
         # callibration_file is in retardance (transmission) | voltage and should (must?) be non redundant -> type can be set by cal_type = 'r' or 't' 
         
+        if np.mod(N_pixel,pixel_binning) != 0: 
+            print('N_pixel / pixel_binning is no integer! No binning applied.')
+            pixel_binning = 1
+        else: 
+            N_pixel = int(N_pixel/pixel_binning)
+        
+        
         if calibration_file is not None:
             pixel_center, pixelwidth = self._calibrate_SLM(calibration_file)
             print('Calibrated to center_wavelength: ' +str(pixel_center)+'nm and pixelwidth: '+str(pixelwidth)+'nm.')
             pixel_center = self._Units(pixel_center,'nm')
-            pixelwidth = abs(self._Units(pixelwidth,'nm'))
+            pixelwidth = abs(self._Units(pixelwidth,'nm'))*pixel_binning
         else:
             pixel_center = self._Units(pixel_center,unit)
-            pixelwidth = abs(self._Units(pixelwidth,unit))
+            pixelwidth = abs(self._Units(pixelwidth,unit))*pixel_binning
 
-        if N_real is None:
-            N_real = N_pixel #To do for calculating with less pixel
-        
         if pixel_transmission_mask is not None:
             if len(pixel_transmission_mask) != N_pixel:
                 print('Mask file does not agree with pixel number!')
                 return
+        
+        
         
         start_f = pixel_center - N_pixel/2*pixelwidth
         end_f = pixel_center + N_pixel/2*pixelwidth
@@ -323,8 +384,8 @@ class PulseGenerator:
       
                 
         if generate_mask: 
-            mask_name_x = save_dir + mask_name+str(loop)+'_x.txt'
-            mask_name_y = save_dir + mask_name+str(loop)+'_y.txt'
+            mask_name_x = save_dir + mask_name+str(suffix)+'_x.txt'
+            mask_name_y = save_dir + mask_name+str(suffix)+'_y.txt'
     
   
             with open(mask_name_x, "w") as txt_file:
@@ -480,7 +541,8 @@ class PulseGenerator:
         
 
     def plot_pulses(self,t_0 = None,t_end = None,frequ_0 = None, frequ_end = None ,plot_pol = 'both',
-                    plot_phase = True, phase_time_shift = 0,domain = 'Hz',save = False,save_name = 'fig_',save_dir = '',sim_input = None,sim_label = []):
+                    plot_phase = False, phase_time_shift = 0,domain = 'Hz',save = False,save_name = 'fig_',save_dir = '',
+                    sim_input = None,sim_label = [],plot_frequ_intensity = False):
         #plotting the current pulse in both time (abs() and real() are plotted)and Fourier space (only abs() is plotted)
         if domain == 'meV':
             self.plot_domain = self.energies
@@ -549,13 +611,20 @@ class PulseGenerator:
         #plot_phase_y *= np.exp(-1j*2*np.pi*self.frequencies*phase_time_shift)
         fig,ax = plt.subplots()
         ax2=ax.twinx()
+        if plot_frequ_intensity: 
+            plot_frequency_x = np.abs(self.frequency_representation_x)**2
+            plot_frequency_y = np.abs(self.frequency_representation_y)**2
+        else:
+            plot_frequency_x = np.abs(self.frequency_representation_x)
+            plot_frequency_y = np.abs(self.frequency_representation_y)
+            
         if plot_pol.lower()[0] == 'b' or plot_pol.lower()[0] == 'x':
-            ax.plot(self.plot_domain, np.abs(self.frequency_representation_x),'b-', label="x_envel")
+            ax.plot(self.plot_domain, plot_frequency_x,'b-', label="x_envel")
             if plot_phase:
                 ax2.plot(self.plot_domain,plot_phase_x/np.pi)
                 
         if plot_pol.lower()[0] == 'b' or plot_pol.lower()[0] == 'y':
-            ax.plot(self.plot_domain, np.abs(self.frequency_representation_y),'r-', label="y_envel")
+            ax.plot(self.plot_domain, plot_frequency_y,'r-', label="y_envel")
             if plot_phase:
                 ax2.plot(self.plot_domain,plot_phase_y/np.pi)       
         ax.set_xlim([frequ_0,frequ_end])
@@ -569,16 +638,40 @@ class PulseGenerator:
             fig.savefig(save_dir+save_name+'_frequ.png')
             
 
-    def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', loop = ''):
+    def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', suffix = ''):
         #Translating the generated pulse for use with the PYACEQD Quantum Dot simulation enviroment 
-        pulse_file_x = temp_dir + file_name + str(loop)+'_x.dat' 
-        pulse_file_y = temp_dir + file_name + str(loop)+'_y.dat'
+        pulse_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
+        pulse_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
 
         export_csv(pulse_file_x, self.time, np.real(self.temporal_representation_x), np.imag(self.temporal_representation_x), precision=8, delimit=' ')
         export_csv(pulse_file_y, self.time, np.real(self.temporal_representation_y), np.imag(self.temporal_representation_y), precision=8, delimit=' ')
         return pulse_file_x, pulse_file_y
 
 
+    #merging with other pulses
+    def merge_pulses(self,other_pulse):
+        # checks 
+        if other_pulse.central_wavelength != self.central_wavelength:
+            print('ERROR MERGING: Central wavelength of pulses do not agree!')
+            return
+        if other_pulse.dt != self.dt:
+            print('CAUTION MERGING: Time steps of pulses do not agree!')
+            
+        other_pulse_real_x = interpolate.interp1d(other_pulse.time, np.real(other_pulse.temporal_representation_x),
+                                                  kind='linear', fill_value=0,bounds_error=False)
+        other_pulse_imag_x = interpolate.interp1d(other_pulse.time, np.imag(other_pulse.temporal_representation_x),
+                                                  kind='linear', fill_value=0,bounds_error=False)
+        
+        other_pulse_real_y = interpolate.interp1d(other_pulse.time, np.real(other_pulse.temporal_representation_y),
+                                                  kind='linear', fill_value=0,bounds_error=False)
+        other_pulse_imag_y = interpolate.interp1d(other_pulse.time, np.imag(other_pulse.temporal_representation_y),
+                                                  kind='linear', fill_value=0,bounds_error=False)
+        
+        self._add_time(other_pulse_real_x(self.time)+1j*other_pulse_imag_x(self.time),
+                       other_pulse_real_y(self.time)+1j*other_pulse_imag_y(self.time))
+        
+            
+    
     ### clear functions
     def clear_all(self):
         self.clear_filter()
