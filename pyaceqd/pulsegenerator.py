@@ -56,6 +56,23 @@ class PulseGenerator:
         self._add_time(pulse_x,pulse_y)
         pass
 
+    def add_sigmoid_time(self,width_t, central_f, rise_t, start_t, height = 1,unit = 'Hz', polarisation = [1,0]):
+        central_f = self._Units(central_f,unit)
+        
+        central_t = start_t + width_t/2
+        sigm = self._sigmoid(self.time,central_t,width_t,rise_t)
+        sigm = sigm/np.max(sigm)*height
+
+        sigm = sigm*np.exp(-1j*2*np.pi*central_f*(self.time-central_t))
+
+        polar_x, polar_y = self._normalise_polarisation(polarisation)
+
+        pulse_x = sigm*polar_x
+        pulse_y = sigm*polar_y
+
+        self._add_time(pulse_x,pulse_y)
+        pass
+
     def add_gaussian_freq(self, width_f, central_f = 0, area_time = 1, polarisation = [1,0],field_or_intesity = 'field',sig_or_fwhm = 'sig',phase_taylor=[],shift_time = 0, unit = 'Hz'):
         # Gaussian pulse in Fourier space 
         # area_time = Transformlimited pulse area in time 
