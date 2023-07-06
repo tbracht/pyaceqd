@@ -10,7 +10,7 @@ from pyaceqd.general_system.general_system import system_ace, system_ace_stream
 hbar = 0.6582173  # meV*ps
 
 def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4"):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48):
     system_prefix = "b_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = B
     system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|1><1|_4".format(delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
@@ -23,41 +23,50 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
                         ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
     interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
     
-    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
 def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2"):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", n_photon=1, t_mem=20.48):
+    n = n_photon + 1
+    for i in range(len(output_ops)):
+        output_ops[i] = output_ops[i].replace("_2","_{}".format(n))
+    initial = initial.replace("_2","_{}".format(n))
     system_prefix = "b_linear_cavity"
     # |0> = G, |1> = X, |2> = Y, |3> = B
-    system_op = ["-{}*|3><3|_4 otimes Id_2 otimes Id_2".format(delta_b),"-{}*|1><1|_4 otimes Id_2 otimes Id_2".format(delta_xy/2),"{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy/2)]
-    boson_op = "|1><1|_4 otimes Id_2 otimes Id_2 + |2><2|_4 otimes Id_2 otimes Id_2 + 2*|3><3|_4 otimes Id_2 otimes Id_2"
+    system_op = ["-{}*|3><3|_4 otimes Id_2 otimes Id_2".format(delta_b).replace("_2","_{}".format(n)),
+                 "-{}*|1><1|_4 otimes Id_2 otimes Id_2".format(delta_xy/2).replace("_2","_{}".format(n)),
+                 "{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy/2).replace("_2","_{}".format(n))]
+    boson_op = "|1><1|_4 otimes Id_2 otimes Id_2 + |2><2|_4 otimes Id_2 otimes Id_2 + 2*|3><3|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n))
     lindblad_ops = []
     # QD decay outside of the cavity
     if lindblad:
         if gamma_b is None:
             gamma_b = gamma_e
-        lindblad_ops = [["|0><1|_4 otimes Id_2 otimes Id_2",gamma_e],["|0><2|_4 otimes Id_2 otimes Id_2",gamma_e],
-                        ["|1><3|_4 otimes Id_2 otimes Id_2",gamma_b],["|2><3|_4 otimes Id_2 otimes Id_2",gamma_b]]
+        lindblad_ops = [["|0><1|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_e],
+                        ["|0><2|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_e],
+                        ["|1><3|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_b],
+                        ["|2><3|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_b]]
     # interaction with laser
-    interaction_ops = [["|1><0|_4 otimes Id_2 otimes Id_2 +|3><1|_4 otimes Id_2 otimes Id_2 ","x"],["|2><0|_4 otimes Id_2 otimes Id_2 +|3><2|_4 otimes Id_2 otimes Id_2 ","y"]]
+    interaction_ops = [["|1><0|_4 otimes Id_2 otimes Id_2 +|3><1|_4 otimes Id_2 otimes Id_2 ".replace("_2","_{}".format(n)),"x"],
+                       ["|2><0|_4 otimes Id_2 otimes Id_2 +|3><2|_4 otimes Id_2 otimes Id_2 ".replace("_2","_{}".format(n)),"y"]]
     # cavity decay
-    lindblad_ops.append(["Id_4 otimes b_2 otimes Id_2",cav_loss])
-    lindblad_ops.append(["Id_4 otimes Id_2 otimes b_2",cav_loss])
+    lindblad_ops.append(["Id_4 otimes b_2 otimes Id_2".replace("_2","_{}".format(n)),cav_loss])
+    lindblad_ops.append(["Id_4 otimes Id_2 otimes b_2".replace("_2","_{}".format(n)),cav_loss])
     # cavity detuning
-    system_op.append(" {} * (Id_4 otimes n_2 otimes Id_2)".format(delta_cx))
-    system_op.append(" {} * (Id_4 otimes Id_2 otimes n_2)".format(delta_cx))
+    system_op.append(" {} * (Id_4 otimes n_2 otimes Id_2)".format(delta_cx).replace("_2","_{}".format(n)))
+    system_op.append(" {} * (Id_4 otimes Id_2 otimes n_2)".format(delta_cx).replace("_2","_{}".format(n)))
     # cavity-qd coupling
     # X-cavity
-    system_op.append("{} * (|1><0|_4 otimes b_2 otimes Id_2 + |0><1|_4 otimes bdagger_2 otimes Id_2)".format(cav_coupl))
-    system_op.append("{} * (|3><1|_4 otimes b_2 otimes Id_2 + |1><3|_4 otimes bdagger_2 otimes Id_2)".format(cav_coupl))
+    system_op.append("{} * (|1><0|_4 otimes b_2 otimes Id_2 + |0><1|_4 otimes bdagger_2 otimes Id_2)".format(cav_coupl).replace("_2","_{}".format(n)))
+    system_op.append("{} * (|3><1|_4 otimes b_2 otimes Id_2 + |1><3|_4 otimes bdagger_2 otimes Id_2)".format(cav_coupl).replace("_2","_{}".format(n)))
     # Y-cavity
-    system_op.append("{} * (|2><0|_4 otimes Id_2 otimes b_2 + |0><2|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl))
-    system_op.append("{} * (|3><2|_4 otimes Id_2 otimes b_2 + |2><3|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl))
+    system_op.append("{} * (|2><0|_4 otimes Id_2 otimes b_2 + |0><2|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl).replace("_2","_{}".format(n)))
+    system_op.append("{} * (|3><2|_4 otimes Id_2 otimes b_2 + |2><3|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl).replace("_2","_{}".format(n)))
     
-    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
@@ -65,7 +74,8 @@ def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, ga
 def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_18 + |1><1|_18 + |2><2|_18 + |3><3|_18 + |4><4|_18 + |5><5|_18","|6><6|_18 + |7><7|_18 + |8><8|_18 + |9><9|_18","|10><10|_18 + |11><11|_18 + |12><12|_18 + |13><13|_18","|14><14|_18 + |15><15|_18 + |16><16|_18 + |17><17|_18"], initial="|0><0|_18"):
     system_prefix = "b_linear_cavity_extended"
-    # |0> = G, |1> = X, |2> = Y, |3> = B
+    # this system accounts for two excitations in total, i.e., G,2,0 and G,0,2 are also considered.
+    # it shows that this is enough in most cases.
     d_C = delta_cx
     d_0 = delta_xy
     d_B = delta_b

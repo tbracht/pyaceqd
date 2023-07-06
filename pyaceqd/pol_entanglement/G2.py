@@ -165,15 +165,15 @@ class PolarizatzionEntanglement():
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
-            t1, G2_1_tau, G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
+            t1, G2_1_t, G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
             tq.update()
             # XX,YX; XX,YY; XY,YX; XY,YY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
-            t2, G2_2_tau, G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
+            t2, G2_2_t, G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
             tq.update()
             # YX,YX; YX,YY; YY,YY
             op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
-            t3, G2_3_tau, G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
+            t3, G2_3_t, G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
             tq.update()
 
             density_matrix[0,0] = np.abs(G2_1[0])  # xx,xx
@@ -200,15 +200,16 @@ class PolarizatzionEntanglement():
 
         if plot_G2 is not None:
             plt.clf()
-            plt.plot(t1, np.real(G2_1_tau[0]), label="xx,xx")
-            plt.plot(t1, np.real(G2_1_tau[2]), label="xy,xy")
-            plt.plot(t2, np.abs(G2_2_tau[1]), label="xx,yy")
-            plt.plot(t3, np.abs(G2_3_tau[0]), dashes=[4,4],label="yx,yx")
-            plt.plot(t3, np.abs(G2_3_tau[2]), dashes=[4,4],label="yy,yy")
+            plt.plot(t1, np.abs(G2_1_t[0]), label="xx,xx")
+            plt.plot(t1, np.abs(G2_1_t[2]), label="xy,xy")
+            plt.plot(t2, np.abs(G2_2_t[1]), label="xx,yy")
+            plt.plot(t3, np.abs(G2_3_t[0]), dashes=[4,4],label="yx,yx")
+            plt.plot(t3, np.abs(G2_3_t[2]), dashes=[4,4],label="yy,yy")
             plt.xlabel("t (ps)")
             plt.ylabel("G2(t)")
             plt.legend()
             plt.savefig("{}.png".format(plot_G2))
+            np.save("{}.npy".format(plot_G2), np.array([t1, G2_1_t[0], G2_1_t[1], G2_1_t[2], G2_2_t[0], G2_2_t[1], G2_2_t[2], G2_2_t[3], G2_3_t[0], G2_3_t[1], G2_3_t[2]]))
         if return_rho:
             return concurrence(density_matrix/norm), density_matrix
         if return_counts:
