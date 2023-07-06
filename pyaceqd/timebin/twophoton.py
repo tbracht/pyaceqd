@@ -51,6 +51,10 @@ class TwoPhotonTimebin(TimeBin):
         return density_matrix/norm, density_matrix
 
     def prepare_operators(self, sigma_gx, sigma_xb, verbose=False):
+        """
+        this function does not take into account if the transition operators contain multiple transitions
+        i.e., it does not work if for example sigma_gx = |0><1|_3 + |1><2|_3
+        """
         # for ex.: sigma_gx = |g><x|, i.e., |0><1|_2
         pattern = "^\|([0-9]*)><([0-9]*)\|_([1-9]*)"  # catches the three relevant numbers in 3 capture groups 
         # first, sigma_x
