@@ -655,14 +655,32 @@ class PulseGenerator:
             fig.savefig(save_dir+save_name+'_frequ.png')
             
 
-    def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', suffix = ''):
+    def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', suffix = '',abs_only = False):
         #Translating the generated pulse for use with the PYACEQD Quantum Dot simulation enviroment 
         pulse_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
         pulse_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
-
+        if abs_only: #for absolute value only
+            export_csv(pulse_file_x, self.time, np.abs(self.temporal_representation_x),np.zeros_like(self.temporal_representation_x,dtype=np.double), precision=8, delimit=' ')
+            export_csv(pulse_file_y, self.time, np.abs(self.temporal_representation_y),np.zeros_like(self.temporal_representation_y,dtype=np.double), precision=8, delimit=' ')
+            return pulse_file_x, pulse_file_y
+    
         export_csv(pulse_file_x, self.time, np.real(self.temporal_representation_x), np.imag(self.temporal_representation_x), precision=8, delimit=' ')
         export_csv(pulse_file_y, self.time, np.real(self.temporal_representation_y), np.imag(self.temporal_representation_y), precision=8, delimit=' ')
         return pulse_file_x, pulse_file_y
+
+    def generate_phase_difference(self,temp_dir = '', file_name = 'phase_diff', suffix = ''):
+        phase_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
+        phase_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
+
+        
+        phase_grad_x = np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)*hbar  
+        phase_grad_y = np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)*hbar
+        
+
+        export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
+        export_csv(phase_file_y, self.time, np.real(phase_grad_y),np.imag(phase_grad_y), precision=8, delimit=' ')  
+
+        return phase_file_x, phase_file_y
 
 
     #merging with other pulses
