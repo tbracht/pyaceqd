@@ -162,3 +162,27 @@ def deserialize_dm(rho):
     """
     dim = int(np.sqrt(len(rho)/2))
     return rho[:dim**2].reshape((dim,dim)) + 1j*rho[dim**2:].reshape((dim,dim))
+
+def output_ops_dm(dim=2):
+    """
+    returns the output operators for a system with dim levels
+    """
+    ops = []
+    for i in range(dim):
+        for j in range(i,dim):
+            ops.append("|{}><{}|_{}".format(i,j,dim))
+    return ops
+
+def compose_dm(outputs, dim=2):
+    """
+    composes a density matrix from the output of ACE, with every output-array being the time dynamics for the corresponding output operator
+    """
+    # dim is the dimension of the system
+    rho = np.zeros((len(outputs[0]),dim,dim),dtype=np.complex128)
+    n = 1  # start at 0, as the zeroth output is the time axis
+    for j in range(dim):
+        for k in range(j,dim):
+            rho[:,j,k] = outputs[n]
+            rho[:,k,j] = np.conjugate(outputs[n])
+            n += 1
+    return np.real(outputs[0]), rho
