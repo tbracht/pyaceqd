@@ -56,6 +56,23 @@ class PulseGenerator:
         self._add_time(pulse_x,pulse_y)
         pass
 
+    def add_sigmoid_time(self,width_t, central_f, rise_t, start_t, height = 1,unit = 'Hz', polarisation = [1,0]):
+        central_f = self._Units(central_f,unit)
+        
+        central_t = start_t + width_t/2
+        sigm = self._sigmoid(self.time,central_t,width_t,rise_t)
+        sigm = sigm/np.max(sigm)*height
+
+        sigm = sigm*np.exp(-1j*2*np.pi*central_f*(self.time-central_t))
+
+        polar_x, polar_y = self._normalise_polarisation(polarisation)
+
+        pulse_x = sigm*polar_x
+        pulse_y = sigm*polar_y
+
+        self._add_time(pulse_x,pulse_y)
+        pass
+
     def add_gaussian_freq(self, width_f, central_f = 0, area_time = 1, polarisation = [1,0],field_or_intesity = 'field',sig_or_fwhm = 'sig',phase_taylor=[],shift_time = 0, unit = 'Hz'):
         # Gaussian pulse in Fourier space 
         # area_time = Transformlimited pulse area in time 
@@ -638,14 +655,32 @@ class PulseGenerator:
             fig.savefig(save_dir+save_name+'_frequ.png')
             
 
-    def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', suffix = ''):
+    def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', suffix = '',abs_only = False):
         #Translating the generated pulse for use with the PYACEQD Quantum Dot simulation enviroment 
         pulse_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
         pulse_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
-
+        if abs_only: #for absolute value only
+            export_csv(pulse_file_x, self.time, np.abs(self.temporal_representation_x),np.zeros_like(self.temporal_representation_x,dtype=np.double), precision=8, delimit=' ')
+            export_csv(pulse_file_y, self.time, np.abs(self.temporal_representation_y),np.zeros_like(self.temporal_representation_y,dtype=np.double), precision=8, delimit=' ')
+            return pulse_file_x, pulse_file_y
+    
         export_csv(pulse_file_x, self.time, np.real(self.temporal_representation_x), np.imag(self.temporal_representation_x), precision=8, delimit=' ')
         export_csv(pulse_file_y, self.time, np.real(self.temporal_representation_y), np.imag(self.temporal_representation_y), precision=8, delimit=' ')
         return pulse_file_x, pulse_file_y
+
+    def generate_phase_difference(self,temp_dir = '', file_name = 'phase_diff', suffix = ''):
+        phase_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
+        phase_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
+
+        
+        phase_grad_x = np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)*hbar  
+        phase_grad_y = np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)*hbar
+        
+
+        export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
+        export_csv(phase_file_y, self.time, np.real(phase_grad_y),np.imag(phase_grad_y), precision=8, delimit=' ')  
+
+        return phase_file_x, phase_file_y
 
 
     #merging with other pulses
