@@ -102,3 +102,163 @@ class OnePhotonTimebin(TimeBin):
                 # pgx
                 _G1[i] = futures[i][1][-1]
         return t1, _G1
+
+class OnePhotonCavity(TimeBin):
+    def __init__(self, system, *pulses, dt=0.1, tb=20, simple_exp=True, gaussian_t=None, verbose=False, workers=2, t_simul=150, options={}) -> None:
+        super().__init__(system, *pulses, dt=dt, tb=tb, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, t_simul=t_simul, options=options)
+        # prepare the operators used in output/multitime
+        self.sigma_x = "|0><0|_3 otimes |0><1|_3"
+        self.sigma_xdag = "|0><0|_3 otimes |1><0|_3"
+    
+    def g1_t1t2(self, t0=30, tend=130, T_sep=0):
+        multitime_op = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
+        output_ops = ["|0><0|_3 otimes |1><1|_3", self.sigma_x]
+
+        n_t1 = int((tend-t0)/self.dt)
+        t1 = np.linspace(t0, tend, n_t1 + 1)
+        n_tau = int((self.tb)/self.dt)
+        t2 = np.linspace(-self.tb, self.tb, 2*n_tau + 1)  # t2[n_tau] = 0.0
+        _G1 = np.zeros([len(t1)],dtype=complex)
+
+        with tqdm.tqdm(total=len(t1),leave=None) as tq:
+            futures = []
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                for i in range(len(t1)):
+                    multitime_op_new = dict(multitime_op)  # must make a copy of the dict
+                    _t1 = t1[i] - T_sep
+                    multitime_op_new["time"] = _t1
+                    t_end = _t1 + self.tb
+                    _e = executor.submit(self.system,0,t_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                # wait for all futures
+                wait(futures)
+            for i in range(len(futures)):
+                # futures are still 'future' objects
+                futures[i] = futures[i].result()
+            # futures now contains t,<g1g1>,<g0g1> for every i
+            for i in range(len(t1)):
+                # _G1[i,0] = futures[i][1][-(n_tau+1)]
+                # _G1[i,1:] = futures[i][2][-n_tau:] # the last n_tau values
+                g1_temp = np.zeros([2*n_tau+1],dtype=complex)
+                g1_temp[:n_tau] = np.conjugate(np.flip(futures[i][2][-n_tau:]))
+                g1_temp[n_tau] = futures[i][1][-(n_tau+1)]
+                g1_temp[-n_tau:] = futures[i][2][-n_tau:]
+                _G1[i] = np.trapz(g1_temp,t2)
+        return t1,_G1
+    
+    def g1_t1t(self, t0=30, tend=130, T_sep=70):
+        multitime_op = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
+        output_ops = ["|0><0|_3 otimes |1><1|_3", self.sigma_x]
+
+        n_t1 = int((tend-t0)/self.dt)
+        t1 = np.linspace(t0, tend, n_t1 + 1)
+        n_tau = int((self.tb)/self.dt)
+        t2 = np.linspace(-self.tb, self.tb, 2*n_tau + 1)  # t2[n_tau] = 0.0
+        _G1 = np.zeros([len(t1)],dtype=complex)
+
+        with tqdm.tqdm(total=len(t1),leave=None) as tq:
+            futures = []
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                for i in range(len(t1)):
+                    multitime_op_new = dict(multitime_op)  # must make a copy of the dict
+                    _t1 = t1[i]
+                    multitime_op_new["time"] = _t1 - T_sep
+                    t_end = _t1 + self.tb
+                    _e = executor.submit(self.system,0,t_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                # wait for all futures
+                wait(futures)
+            for i in range(len(futures)):
+                # futures are still 'future' objects
+                futures[i] = futures[i].result()
+            # futures now contains t,<g1g1>,<g0g1> for every i
+            for i in range(len(t1)):
+                # _G1[i,0] = futures[i][1][-(n_tau+1)]
+                # _G1[i,1:] = futures[i][2][-n_tau:] # the last n_tau values
+                g1_temp = np.zeros([2*n_tau+1],dtype=complex)
+                n_t2 = 2*n_tau+1
+                g1_temp[-n_t2:] = futures[i][2][-n_t2:]
+                _G1[i] = np.trapz(g1_temp,t2)
+        return t1,_G1
+    
+    def g1_t1(self, t0=30, tend=130, T_sep=70):
+        multitime_op = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
+        output_ops = ["|0><0|_3 otimes |1><1|_3", self.sigma_xdag]
+
+        n_t1 = int((tend-t0)/self.dt)
+        t1 = np.linspace(t0, tend, n_t1 + 1)
+        n_tau = int((self.tb)/self.dt)
+        t2 = np.linspace(-self.tb, self.tb, 2*n_tau + 1)  # t2[n_tau] = 0.0
+        _G1 = np.zeros([len(t1),len(t2)],dtype=complex)
+
+        # numbers for diagonal slicing
+        n_nonfull = np.min([len(t1),len(t2)])-1  # number of unfull diagonals
+        n_full = len(t1)+len(t2)-1-2*n_nonfull  # number of full diagonals
+        # print(n_nonfull, n_full)
+        with tqdm.tqdm(total=len(t1)+len(t2)-1,leave=None) as tq:
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                futures = []
+                # first non-full diagonals
+                for i in range(n_nonfull):
+                    t_apply = t1[0]+t2[i]-T_sep
+                    multitime_op_new = dict(multitime_op)  # must make a copy of the dict
+                    multitime_op_new["time"] = np.round(t_apply,decimals=3)
+                    t_end = t1[i]
+                    _e = executor.submit(self.system,0,t_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                    # print("{:.2f},{:.2f}".format(t_apply, t_end))
+                wait(futures)
+                for i in range(n_nonfull):
+                    futures[i] = futures[i].result()
+                    n_el = i+1
+                    for j in range(n_el):
+                        # _G1[j,i-j] = j+1
+                        _G1[j,i-j] = futures[i][2][-n_el + j]
+                
+                # print("next")
+                futures = []
+                # return t1,_G1
+                # all full diagonals
+                for i in range(n_nonfull,n_full+n_nonfull):
+                    t_apply = t1[i]+t2[0]-T_sep
+                    multitime_op_new = dict(multitime_op)  # must make a copy of the dict
+                    multitime_op_new["time"] = np.round(t_apply,decimals=3)
+                    t_end = t1[-1]
+                    _e = executor.submit(self.system,0,t_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                    # print("{:.2f},{:.2f}".format(t_apply, t_end))
+                wait(futures)
+                for i in range(n_full):
+                    futures[i] = futures[i].result()
+                    for j in range(n_nonfull+1):
+                        # _G1[j+i,len(t2)-j-1] = j+1 
+                        _G1[j+i,len(t2)-j-1] = futures[i][2][-(n_nonfull+1) + j]
+
+                        # _G1[j,n_nonfull + i-j] = futures[i][2][-(n_nonfull+1) + j]
+
+
+                # print("next")
+                futures = []
+                # last non-full diagonals
+                for i in range(n_nonfull):
+                    t_apply = t1[i+1]+t2[-1]-T_sep
+                    multitime_op_new = dict(multitime_op)  # must make a copy of the dict
+                    multitime_op_new["time"] = np.round(t_apply,decimals=3)
+                    t_end = t1[-1]
+                    _e = executor.submit(self.system,0,t_end,multitime_op=multitime_op_new, suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                    # print("{:.2f},{:.2f}".format(t_apply, t_end))
+                wait(futures)
+                for i in range(n_nonfull):
+                    futures[i] = futures[i].result()
+                    n_el = n_nonfull-i
+                    for j in range(n_el):
+                        # _G1[len(t1)-n_el+j,len(t2)-1-j] = j+1
+                        _G1[len(t1)-n_el+j,len(t2)-1-j] = futures[i][2][-n_el + j]
+        _G1 = np.trapz(_G1, t2, axis=1)
+        return t1,_G1

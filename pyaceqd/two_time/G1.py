@@ -27,7 +27,7 @@ def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3
     os.remove(pulse_file)
     return t, tau, g1
 
-def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls_, multitime_op={"operator": "|1><0|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, **options):
+def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls_, multitime_op={"operator": "|0><1|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, **options):
     # includes tend
     t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     n_tau = int((tauend-tau0)/dtau)
