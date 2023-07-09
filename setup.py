@@ -6,6 +6,7 @@ setup(
       install_requires=[
                         'numpy',
                         'matplotlib',
-                        'tqdm'
+                        'tqdm',
+                        'scipy'
                         ]
       )
