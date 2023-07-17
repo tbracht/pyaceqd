@@ -6,11 +6,12 @@ import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
 from pyaceqd.general_system.general_system import system_ace, system_ace_stream
+from pyaceqd.general_system.general_dressed_states import dressed_states
 
 hbar = 0.6582173  # meV*ps
 
 def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     system_prefix = "b_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = B
     system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|1><1|_4".format(delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
@@ -23,13 +24,25 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
                         ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
     interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
     
+    rf_op = None
+    if rf:
+        # 2*|3><3|_4 because B contains 2 excitons
+        rf_op = "|1><1|_4 + |2><2|_4 + 2*|3><3|_4" 
+
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only,
+                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
+def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, filename="biexciton_dressed", firstonly=False, **options):
+    colors = ["#0000FF", "#00CC33", "#F9A627", "#FF0000"]
+    dim = 4
+    return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=colors, **options)
+
 def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", n_photon=1, t_mem=20.48):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", n_photon=1,
+                t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     n = n_photon + 1
     for i in range(len(output_ops)):
         output_ops[i] = output_ops[i].replace("_2","_{}".format(n))
@@ -66,14 +79,32 @@ def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, ga
     system_op.append("{} * (|2><0|_4 otimes Id_2 otimes b_2 + |0><2|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl).replace("_2","_{}".format(n)))
     system_op.append("{} * (|3><2|_4 otimes Id_2 otimes b_2 + |2><3|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl).replace("_2","_{}".format(n)))
     
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_4 otimes Id_{} otimes Id_{}".format(n,n)
+        rf_op = rf_op + " + Id_4 otimes n_{} otimes Id_{}".format(n,n)
+        rf_op = rf_op + " + Id_4 otimes Id_{} otimes n_{}".format(n,n)
+        if pulse_file_x is not None and rf_file is None:
+            print("Error: pulse file is given, but no file for rotating frame")
+            return 0
+
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only,
+                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
+def biexciton_photons_dressed_states(t_start, t_end, *pulses, plot=True, filename="tls_photons_dressed", firstonly=False, **options):
+    # dim = 2 for TLS
+    n = options["n_photon"] + 1
+    dim = [2,n,n]
+    return dressed_states(biexciton_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=None, **options)
+
 def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_18 + |1><1|_18 + |2><2|_18 + |3><3|_18 + |4><4|_18 + |5><5|_18","|6><6|_18 + |7><7|_18 + |8><8|_18 + |9><9|_18","|10><10|_18 + |11><11|_18 + |12><12|_18 + |13><13|_18","|14><14|_18 + |15><15|_18 + |16><16|_18 + |17><17|_18"], initial="|0><0|_18"):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_18 + |1><1|_18 + |2><2|_18 + |3><3|_18 + |4><4|_18 + |5><5|_18","|6><6|_18 + |7><7|_18 + |8><8|_18 + |9><9|_18","|10><10|_18 + |11><11|_18 + |12><12|_18 + |13><13|_18","|14><14|_18 + |15><15|_18 + |16><16|_18 + |17><17|_18"], initial="|0><0|_18",
+               t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     system_prefix = "b_linear_cavity_extended"
+    # state mapping: |G,0,0> 0, |G,1,0> 1, |G,0,1> 2, |G,1,1> 3, |G,2,0> 4, |G,0,2> 5, |X,0,0> 6, |X,1,0> 7, |X,0,1> 8, |X,1,1> 9, |Y,0,0> 10, |Y,1,0> 11, |Y,0,1> 12, |Y,1,1> 13, |B,0,0> 14, |B,1,0> 15, |B,0,1> 16, |B,1,1> 17
     # this system accounts for two excitations in total, i.e., G,2,0 and G,0,2 are also considered.
     # it shows that this is enough in most cases.
     d_C = delta_cx
@@ -104,10 +135,20 @@ def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delt
     # Y-cavity
     system_op.append("{} * ( |2><10|_18 + |3><11|_18 + sqrt(2)*|5><12|_18 + |10><2|_18 + |11><3|_18 + sqrt(2)*|12><5|_18 + |12><14|_18 + |13><15|_18 + |14><12|_18 + |15><13|_18)".format(cav_coupl))
     
-    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+    rf_op = None
+    if rf:
+        # the factors correpond to the number of excitations (QD&photons) in the respective state
+        rf_op = "|1><1|_18 + |2><2|_18 + 2*|3><3|_18 + 2*|4><4|_18 + 2*|5><5|_18 + |6><6|_18 + 2*|7><7|_18 + 2*|8><8|_18 + 3*|9><9|_18 + |10><10|_18 + 2*|11><11|_18 + 2*|12><12|_18 + 3*|13><13|_18 + 2*|14><14|_18 + 3*|15><15|_18 + 3*|16><16|_18 + 4*|17><17|_18"
+
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, 
+                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
+
+def biexciton_photons_extended_dressed_states(t_start, t_end, *pulses, plot=True, filename="biexciton_photons_extended_dressed", firstonly=False, **options):
+    dim = 18
+    return dressed_states(biexciton_photons_extended, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=None, **options)
 
 def biexciton_(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, generate_pt=False, t_mem=10, threshold="7", ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, ninterm=10, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"]):

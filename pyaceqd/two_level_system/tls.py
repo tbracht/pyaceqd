@@ -6,12 +6,12 @@ from pyaceqd.tools import export_csv, construct_t
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
-from pyaceqd.general_system.general_system import system_ace, system_ace_stream
-
+from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.general_dressed_states import dressed_states
 hbar = 0.6582173  # meV*ps
 
-def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, ninterm=10, pulse_file=None, threshold="7", prepare_only=False, stream=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], LO_params=None):
+def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     system_prefix = "tls"
     system_op = None
     boson_op = "1*|1><1|_2"
@@ -21,18 +21,73 @@ def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate
         lindblad_ops = [["|0><1|_2",gamma_e]]
     # note that the TLS uses x-polar
     interaction_ops = [["|1><0|_2","x"]]
-    #output_ops = ["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"]
+    # rotating frame of pulse
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_2"
     # multitime: for ex. ["|1><0|_2",0,"left"] applies |1><0|_2 at t=0 from the left
     # invoke_dict = {"dt": dt, "phonons": phonons, "generate_pt": generate_pt, "t_mem": t_mem, "ae": ae, "temperature": temperature}
-    if stream:
-        result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params)
-    else:
-        result = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, generate_pt=generate_pt, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix,\
-                      multitime_op=multitime_op, nintermediate=ninterm, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=threshold,\
-                      system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
+                  firstonly=firstonly)
     return result
+
+def tls_dressed_states(t_start, t_end, *pulses, plot=True, filename="tls_dressed", firstonly=False, **options):
+    # dim = 2 for TLS
+    colors=["#0000FF", "#FF0000"]
+    dim = 2
+    return dressed_states(tls_, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=colors, **options)
+
+def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, cav_coupl2=None, cav_loss2=None, delta_cx2=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, n_phot1=2, n_phot2=2, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], dressedstates=False, rf=False, rf_file=None, firstonly=False):
+    n1 = n_phot1 + 1
+    n2 = n_phot2 + 1
+    system_prefix = "tls_cavity"
+    system_op = []
+    boson_op = "|1><1|_2 otimes Id_{} otimes Id_{}".format(n1,n2)
+    initial = "|0><0|_2 otimes |0><0|_{} otimes |0><0|_{}".format(n1,n2)
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2 otimes Id_{} otimes Id_{}".format(n1,n2), gamma_e]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_2 otimes Id_{} otimes Id_{}".format(n1,n2),"x"]]
+    # rotating frame of pulse
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_2 otimes Id_{} otimes Id_{}".format(n1,n2)
+        rf_op = rf_op + " + Id_2 otimes n_{} otimes Id_{}".format(n1,n2)
+        rf_op = rf_op + " + Id_2 otimes Id_{} otimes n_{}".format(n1,n2)
+        if pulse_file is not None and rf_file is None:
+            print("Error: pulse file is given, but no file for rotating frame")
+            return 0
+
+    if cav_coupl2 is None:
+        cav_coupl2 = cav_coupl1
+    if cav_loss2 is None:
+        cav_loss2 = cav_loss1
+    # cavity detuning
+    system_op.append(" {} * (Id_2 otimes n_{} otimes Id_{})".format(delta_cx1, n1, n2))
+    system_op.append(" {} * (Id_2 otimes Id_{} otimes n_{})".format(delta_cx2, n1, n2))
+    # cavity coupling
+    system_op.append(" {} * (|1><0|_2 otimes b_{} otimes Id_{} + |0><1|_2 otimes bdagger_{} otimes Id_{})".format(cav_coupl1, n1, n2, n1, n2))
+    system_op.append(" {} * (|1><0|_2 otimes Id_{} otimes b_{} + |0><1|_2 otimes Id_{} otimes bdagger_{})".format(cav_coupl2, n1, n2, n1, n2))
+    # cavity loss
+    lindblad_ops.append(["Id_2 otimes b_{} otimes Id_{}".format(n1, n2), cav_loss1])
+    lindblad_ops.append(["Id_2 otimes Id_{} otimes b_{}".format(n1, n2), cav_loss2])
+
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
+                  firstonly=firstonly)
+    return result
+
+def tls_photons_dressed_states(t_start, t_end, *pulses, plot=True, filename="tls_photons_dressed", firstonly=False, **options):
+    # dim = 2 for TLS
+    n1 = options["n_phot1"] + 1
+    n2 = options["n_phot2"] + 1
+    dim = [2,n1,n2]
+    return dressed_states(tls_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=None, **options)
 
 def tls_ace(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None):

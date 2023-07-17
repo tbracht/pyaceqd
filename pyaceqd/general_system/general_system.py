@@ -43,22 +43,66 @@ def check_multitime(multitime_op,verbose):
             multitime_op["applyBefore"] = "false"
     #return multitime_op
 
-def generate_pulsefiles(t, pulses, temp_dir, system_prefix, suffix):
+def generate_pulsefiles(t, pulses, temp_dir, system_prefix, suffix, abs_only=False):
     pulse_file_x = temp_dir + "{}_pulse_x_{}.dat".format(system_prefix, suffix)
     pulse_file_y = temp_dir + "{}_pulse_y_{}.dat".format(system_prefix, suffix)
     pulse_x = np.zeros_like(t, dtype=complex)
     pulse_y = np.zeros_like(t, dtype=complex)
     for _p in pulses:
-        pulse_x = pulse_x + _p.polar_x * _p.get_total(t)
-        pulse_y = pulse_y + _p.polar_y * _p.get_total(t)
+        if abs_only:
+            pulse_x = pulse_x + _p.polar_x * np.abs(_p.get_total(t))
+            pulse_y = pulse_y + _p.polar_y * np.abs(_p.get_total(t))
+        else:
+            pulse_x = pulse_x + _p.polar_x * _p.get_total(t)
+            pulse_y = pulse_y + _p.polar_y * _p.get_total(t)
     # this exports to a format that is readable by ACE.
     # note the precision
     export_csv(pulse_file_x, t, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
     export_csv(pulse_file_y, t, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
     return pulse_file_x, pulse_file_y
 
+def generate_rf_file(t, pulses, temp_dir, system_prefix, suffix, firstonly=False):
+    """
+    prepares file for rotating frame
+    also re-generates pulse files for rotating frame
+    """
+    rf_file = temp_dir + "{}_rf_{}.dat".format(system_prefix, suffix)
+    if len(pulses) > 1:
+        print("Warning: more than one pulse supplied, only the first one is used for rf")
+        print("Note that also, chirping more than the first pulse is not supported")
+    rf = pulses[0].get_frequency(t)
+    rf = np.array(rf)
+    export_csv(rf_file, t, rf.real, rf.imag, precision=8, delimit=' ')
+    # copy pulses
+    new_pulses = []
+    for p in pulses:
+        new_pulses.append(p.copy())
+    # substract e_start from all pulses
+    e_start0,_ = new_pulses[0].get_energy()
+    for i in range(len(new_pulses)):
+        e_start,_ = new_pulses[i].get_energy()
+        # substract e_start0 from all pulses, also set chirps to zero.
+        new_pulses[i].set_energy(e_start-e_start0,0)
+    if firstonly:
+        # only first pulse is considered in the dynamics
+        # This is useful, if only the first pulse shall be used
+        # for the composition of the dressed states
+        generate_pulsefiles(t, [new_pulses[0]], temp_dir, system_prefix, suffix, abs_only=False)
+    else:
+        generate_pulsefiles(t, new_pulses, temp_dir, system_prefix, suffix, abs_only=False)
+    return rf_file
+
 def read_result(data,n):
     t = data[:,0]
+    result = np.empty([1+n,len(t)], dtype=complex)
+    result[0] = t
+    for i in range(n):
+        result[i+1] = data[:,2*i+1] + 1j*data[:,2*i+2]
+    return result
+
+def read_result_1d(data):
+    t = data[:,0]
+    n = int((data.shape[1]-1)/2)
     result = np.empty([1+n,len(t)], dtype=complex)
     result[0] = t
     for i in range(n):
@@ -180,8 +224,8 @@ def system_ace(t_start, t_end, *pulses, dt=0.1, phonons=False, generate_pt=False
     return result
 
 def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-                  multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None):
+                  multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7, \
+                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False):
     """
     ACE_stream: separate calculation for the process tensor, which can be used to simulate way longer time scales.
     """
@@ -240,6 +284,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
     # this allows re-using the pulse file, for example for multi-time correlation functions
     # where the pulse is not changed for many calculations
     _remove_pulse_file = False
+    _remove_rf_file = False
     if pulse_file_x is None:
         _remove_pulse_file = True
         pulse_file_x, pulse_file_y = generate_pulsefiles(t=t, pulses=pulses, temp_dir=temp_dir, system_prefix=system_prefix, suffix=suffix)
@@ -262,6 +307,18 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             if system_op is not None:
                 for _op in system_op:
                     f.write("add_Hamiltonian {{ {} }}\n".format(_op))
+            # rotating frame: changes the energies of the hamiltonian, using the operator in rf_op
+            # this is done using the add_Pulse function of ACE, as this can time-dependently change the system hamiltonian
+            # note that it automatically adds the hermitian conjugate of rf_op as well, so a factor of 1/2 is needed
+            if rf_op is not None:
+                if rf_file is None:
+                    # Caution: This also re-generates the pulse file, removing the temporal
+                    # oscillation of (at least) the first pulse.
+                    # If you give a custom pulse file and want to use a rotating frame,
+                    # make sure to also supply the rf_file
+                    _remove_rf_file = True
+                    rf_file = generate_rf_file(t=t, pulses=pulses, temp_dir=temp_dir, system_prefix=system_prefix, suffix=suffix, firstonly=firstonly)
+                f.write("add_Pulse file {} {{ -0.5*hbar*({}) }}\n".format(rf_file,rf_op))
             # lindblad operators
             if lindblad_ops is not None:
                 for _op in lindblad_ops:
@@ -300,8 +357,17 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
          # param file is now written, start ACE
         if prepare_only:
             _remove_pulse_file = False
+            _remove_rf_file = False
             print("prepared file {}, exiting.".format(tmp_file))
             return [np.array([0,0]) for i in range(1+len(output_ops))]
+        if dressedstates:
+            if not verbose:
+                subprocess.check_output(["timedep_eigenstates",tmp_file])
+            else:
+                subprocess.check_call(["timedep_eigenstates",tmp_file])
+            dressed_data = np.genfromtxt(out_file+'.ds')
+            dressed_result = read_result_1d(dressed_data)
+            return dressed_result
         if not verbose:
             subprocess.check_output(["ACE_stream",tmp_file])
         else:
@@ -320,4 +386,6 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             os.remove(pulse_file_x)
             if pulse_file_y is not None:
                 os.remove(pulse_file_y)
+        if _remove_rf_file:
+            os.remove(rf_file)
     return result
