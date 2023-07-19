@@ -281,9 +281,34 @@ class PulseGenerator:
             print('WARNING: Transmission in filter > 1. Capped to 1.')
             self.frequency_filter_x[self.frequency_filter_x > 1] = 1 
             self.frequency_filter_y[self.frequency_filter_y > 1] = 1 
-    ### SLM
+   
     
-                
+    ### Devices from the lab 
+    # pulse shaper
+    def apply_pulse_shaper(self,slit_position_f,transmission = 1, slit_width_f = None, slit_rise_f = None, min_f = None, max_f = None, calibration_file = None, pol = 'b',unit = 'Hz'):
+        # applies a slit filter to the pulse, given a slit_width_f and a slit_rise_f
+        # if a calibration_file is specified, the slit_width_f and slit_rise_f are ignored
+        # the calibration_file is in nm
+        if calibration_file is not None:
+            pass# to do 
+        else:
+            slit_width_f = self._Units(slit_width_f,unit)
+            slit_rise_f = self._Units(slit_rise_f,unit)
+            min_f = self._Units(min_f,unit)
+            max_f = self._Units(max_f,unit)
+
+        slit_position_f = self._Units(slit_position_f,unit)
+
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'x':
+            self.add_filter_sigmoid(central_f=slit_position_f, width_f=slit_width_f, rise_f=slit_rise_f, polarisation='x',transmission = transmission)
+            self.apply_frequency_filter(pol='x')
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'y':
+            self.add_filter_sigmoid(central_f=slit_position_f, width_f=slit_width_f, rise_f=slit_rise_f, polarisation='y',transmission = transmission)
+            self.apply_frequency_filter(pol='y')
+        
+        pass
+
+    # SLM   
     def apply_SLM(self, pixelwidth = None, pixel_center = 0, N_pixel = 128, unit = 'Hz', kind = 'rectangle',polarisation = 'both',
                    SLM = 'amp',generate_mask = False, save_dir = '', mask_name = 'mask_output',
                    suffix = 0,psf_width = None,psf_sig_fwhm = 'fwhm',calibration_file = None, orientation = 'rising',
@@ -673,8 +698,8 @@ class PulseGenerator:
         phase_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
 
         
-        phase_grad_x = np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)*hbar  
-        phase_grad_y = np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)*hbar
+        phase_grad_x = -np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)  
+        phase_grad_y = -np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)
         
 
         export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
