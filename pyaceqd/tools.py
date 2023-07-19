@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 
 def _merge_intervals(intervals):
     """
@@ -163,15 +164,6 @@ def deserialize_dm(rho):
     dim = int(np.sqrt(len(rho)/2))
     return rho[:dim**2].reshape((dim,dim)) + 1j*rho[dim**2:].reshape((dim,dim))
 
-def output_ops_dm(dim=2):
-    """
-    returns the output operators for a system with dim levels
-    """
-    ops = []
-    for i in range(dim):
-        for j in range(i,dim):
-            ops.append("|{}><{}|_{}".format(i,j,dim))
-    return ops
 
 def compose_dm(outputs, dim=2):
     """
@@ -179,10 +171,68 @@ def compose_dm(outputs, dim=2):
     """
     # dim is the dimension of the system
     rho = np.zeros((len(outputs[0]),dim,dim),dtype=np.complex128)
-    n = 1  # start at 0, as the zeroth output is the time axis
+    n = 1  # start at 1, as the zeroth output is the time axis
     for j in range(dim):
         for k in range(j,dim):
             rho[:,j,k] = outputs[n]
             rho[:,k,j] = np.conjugate(outputs[n])
             n += 1
-    return np.real(outputs[0]), rho
+    t = np.real(outputs[0])
+    return t, rho
+
+def generate_basis_states(dim):
+        basis_states = []
+        indices_range = [range(d) for d in dim]
+        # from itertools.product documentation:
+        # Cartesian product of input iterables.
+        # The nested loops cycle like an odometer with the rightmost element advancing on every iteration. 
+        for indices in itertools.product(*indices_range):
+            basis_states.append(indices)
+        return basis_states
+
+def basis_states(dim):
+    # generates readable basis state representation, for use in plotting etc.
+    # if dim is no list, make it one
+    if not isinstance(dim, list):
+        dim = [dim]
+    basis_states = generate_basis_states(dim)
+    _basis_states = []
+    for basis_state in basis_states:
+        basis_state_str = '|'
+        for index in basis_state:
+            basis_state_str += f'{index},'
+        basis_state_str = basis_state_str.rstrip(',')
+        basis_state_str += '⟩'
+        _basis_states.append(basis_state_str)
+    return _basis_states
+
+def matrix_element_operators(basis_states, dim, readable=False):
+        operators = []
+        for i in range(len(basis_states)):
+            bra_state = basis_states[i]
+            for j in range(i,len(basis_states)):
+                ket_state = basis_states[j]
+                operator_str = ''
+                for k, (bra_index, ket_index) in enumerate(zip(bra_state, ket_state)):
+                    if readable:
+                        operator_str += f'|{bra_index}⟩⟨{ket_index}|_{dim[k]} ⊗ '
+                    else:
+                        operator_str += f'|{bra_index}><{ket_index}|_{dim[k]} otimes '
+                if readable:
+                    operator_str = operator_str.rstrip(' ⊗ ')
+                else:
+                    operator_str = operator_str.rstrip('otimes ')
+                operators.append(operator_str)
+        return operators
+
+def output_ops_dm(dim=[2,2], readable=False):
+    """
+    returns the output operators for a system with n1*n2*n3... levels
+    to turn this into a density matrix, use:
+    compose_dm(outputs, dim=np.prod(dim))
+    can also be used instead of output_ops_dm
+    """
+    if not isinstance(dim, list) and not isinstance(dim, tuple):
+        dim = [dim]
+    basis_states = generate_basis_states(dim)
+    return matrix_element_operators(basis_states, dim, readable=readable)
