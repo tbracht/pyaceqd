@@ -9,7 +9,7 @@ from pyaceqd.pulses import ChirpedPulse
 
 HBAR = 0.6582119514  # meV ps
 
-def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False):
+def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4):
     # pulse file generation
     _t_pulse = np.arange(t0,tend+tauend,step=dtau)
     pulse_file = temp_dir + "tls_G1_pulse.dat"
@@ -23,11 +23,11 @@ def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3
     options = {"gamma_e": gamma_e, "phonons": phonons, "ae": ae, "temperature": temperature, "lindblad": True, "pt_file": pt_file, "temp_dir": temp_dir,
                "pulse_file": pulse_file, "stream": True, "output_ops": output_ops}
     multitime_op = {"operator": "|0><1|_2","applyFrom": "_left", "applyBefore": "false"}
-    t, tau, g1 = G1_general(t0,tend,tau0,tauend,dt,dtau,*pulses,system=tls_,multitime_op=multitime_op,coarse_t=coarse_t,workers=workers,prepare_only=prepare_only,simple_exp=simple_exp,gaussian_t=gaussian_t,**options)
+    t, tau, g1 = G1_general(t0,tend,tau0,tauend,dt,dtau,*pulses,system=tls_,multitime_op=multitime_op,coarse_t=coarse_t,workers=workers,prepare_only=prepare_only,simple_exp=simple_exp,gaussian_t=gaussian_t,factor_tau=factor_tau,**options)
     os.remove(pulse_file)
     return t, tau, g1
 
-def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls_, multitime_op={"operator": "|0><1|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, **options):
+def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls_, multitime_op={"operator": "|0><1|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **options):
     # includes tend
     t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     n_tau = int((tauend-tau0)/dtau)
@@ -36,7 +36,7 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
     if coarse_t:
         if gaussian_t:
             # smaller timesteps to reduce numerical errors
-            t = construct_t(t0, tend, dt, 3*dt, *pulses, simple_exp=simple_exp,gaussian_t=True)
+            t = construct_t(t0, tend, dt, 3*dt, *pulses, factor_tau=factor_tau, simple_exp=simple_exp,gaussian_t=True)
         else:
             t = construct_t(t0, tend, dt, 10*dt, *pulses, simple_exp=simple_exp,gaussian_t=False)
     
@@ -78,6 +78,34 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
             # as Tr(sigma^dagger * rho) =  <|x><g|> = pxg
             _G1[i,1:] = futures[i][2][-n_tau:]  # the last n_tau values
     return t, tau, _G1
+
+def pulsed_mollow_tls_pulses(pulse, areas, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4):
+    n_tau = int((tauend)/dtau)
+    tau_axis = np.linspace(0, tauend, n_tau + 1)
+    spectrums = np.zeros([len(areas),2*len(tau_axis)-1])
+    fft_freqs = -2*np.pi * HBAR * np.fft.fftfreq(2*len(tau_axis)-1,d=dtau)
+    pulse_tau = pulse.tau
+    detuning = pulse.e_start
+    for i in tqdm.trange(len(areas),leave=None):
+        pulse.e0 = areas[i]
+        t_axis, tau_axis, g1 = G1_twols(0,tend,0,tauend,dt,dtau,pulse,ae=ae,gamma_e=gamma_e,coarse_t=True,phonons=phonons, workers=workers, temperature=temperature, pt_file=pt_file, temp_dir=temp_dir, prepare_only=prepare_only, simple_exp=simple_exp, gaussian_t=gaussian_t,factor_tau=factor_tau)
+        # symmetric g1 for negative tau. for FFT
+        g1_symm = np.empty([len(t_axis),2*len(tau_axis)-1],dtype=complex)
+        g1_symm[:,:len(tau_axis)] = g1[:,::-1]
+        g1_symm[:,-(len(tau_axis)-1):] = np.conj(g1[:,1:])
+        spectra = np.empty([len(g1_symm),len(g1_symm[0])],dtype=complex)
+        for j in range(len(g1_symm)):
+            # do fft for every t, along the tau axis
+            spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
+        # integrate along the t axis
+        spectrums[i] = np.real(np.trapz(spectra.transpose(), t_axis))
+        # save in each loop, so progress is saved if the calculation is interrupted
+        if save_dir is not None:
+            _name = "_tau{:.2f}_lifet{:.1f}_det{:.1f}.npy".format(pulse_tau,1/gamma_e,detuning)
+            np.save(save_dir+"x"+_name,np.fft.fftshift(fft_freqs))
+            np.save(save_dir+"y"+_name,areas)
+            np.save(save_dir+"z"+_name,spectrums)
+    return np.fft.fftshift(fft_freqs), areas, spectrums
 
 def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False):
     n_tau = int((tauend)/dtau)
