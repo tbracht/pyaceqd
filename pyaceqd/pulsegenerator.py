@@ -130,16 +130,19 @@ class PulseGenerator:
         # filters have a transmission that can be invertet (1- transmission) bu setting invert = True
         # different merging techniques can be used merging = 'x' x: + -> adding filters; * -> multiplying filters; m -> Overlaying filters
         # Filters can be applied to either('x' or 'y') or both ('b') pulse polarisations 
-    def add_filter_rectangle(self, central_f, width_f, transmission = 1 ,polarisation = 'b', invert = False,merging = '+', unit = 'Hz'):
+    def add_filter_rectangle(self, central_f = None, width_f = None, transmission = 1 ,polarisation = 'b', invert = False,merging = '+', unit = 'Hz'):
         # Square filter
-        central_f = self._Units(central_f,unit)
-        width_f = np.abs(self._Units(width_f,unit))
+        if central_f is None:
+            filter = np.ones_like(self.frequencies,dtype=complex)*transmission
+        else:
+            central_f = self._Units(central_f,unit)
+            width_f = np.abs(self._Units(width_f,unit))
 
-        filter = np.zeros_like(self.frequencies,dtype=complex)
-        filter[np.abs(self.frequencies-central_f)<=width_f/2] = transmission
+            filter = np.zeros_like(self.frequencies,dtype=complex)
+            filter[np.abs(self.frequencies-central_f)<=width_f/2] = transmission
 
-        if invert:
-            filter = (1-filter)
+            if invert:
+                filter = (1-filter)
 
         self._add_filter(filter,polarisation,merging=merging)
         pass
@@ -347,6 +350,9 @@ class PulseGenerator:
 
         pixel_transmission_x = []
         pixel_transmission_y = []
+
+        pixel_phase_x = []
+        pixel_phase_y = []
        
             
         if polarisation.lower()[0] == 'b' or polarisation.lower()[0] == 'x':
@@ -368,31 +374,44 @@ class PulseGenerator:
                     
                 if SLM.lower() == 'ap':
                     self.frequency_filter_x[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.mean(np.angle(cur_slice)))
+                    pixel_transmission_x.append(np.mean(np.abs(cur_slice)))
+                    pixel_phase_x.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'p':
                     self.frequency_filter_x[L_slice] = np.abs(cur_slice)*np.exp(1j*np.mean(np.angle(cur_slice)))
-                    pixel_transmission_x.append(np.mean(np.angle(cur_slice)))
+                    pixel_transmission_x.append(1)
+                    pixel_phase_x.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'a':
                     self.frequency_filter_x[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.angle(cur_slice))
                     pixel_transmission_x.append(np.mean(np.abs(cur_slice))) # <-- carefull
+                    pixel_phase_x.append(0)
             if polarisation.lower()[0] == 'b' or polarisation.lower()[0] == 'y':
                 if pixel_transmission_mask is None:
                     cur_slice = self.frequency_filter_y[L_slice]
                 else:
                     cur_slice = pixel_transmission_mask[N_pixel -1 -i]
+
                 if SLM.lower() == 'ap':
                     self.frequency_filter_y[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.mean(np.angle(cur_slice)))
+                    pixel_transmission_y.append(np.mean(np.abs(cur_slice)))
+                    pixel_phase_y.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'p':
                     self.frequency_filter_y[L_slice] = np.abs(cur_slice)*np.exp(1j*np.mean(np.angle(cur_slice)))
-                    pixel_transmission_y.append(np.mean(np.angle(cur_slice)))
+                    pixel_transmission_y.append(1)
+                    pixel_phase_y.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'a':
                     self.frequency_filter_y[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.angle(cur_slice))
                     pixel_transmission_y.append(np.mean(np.abs(cur_slice)))
+                    pixel_phase_y.append(0)
         if orientation.lower()[0] == 'r':    
             pixel_transmission_x = np.flipud(np.array(pixel_transmission_x))
             pixel_transmission_y = np.flipud(np.array(pixel_transmission_y))
+            pixel_phase_x = np.flipud(np.array(pixel_phase_x))
+            pixel_phase_y = np.flipud(np.array(pixel_phase_y))
         elif orientation.lower()[0] == 'f':
             pixel_transmission_x = np.array(pixel_transmission_x)
             pixel_transmission_y = np.array(pixel_transmission_y)
+            pixel_phase_x = np.array(pixel_phase_x)
+            pixel_phase_y = np.array(pixel_phase_y)
 
         if kind.lower()[0] == 'p':
             if psf_width is None:
@@ -426,9 +445,10 @@ class PulseGenerator:
       
                 
         if generate_mask: 
-            mask_name_x = save_dir + mask_name+str(suffix)+'_x.txt'
-            mask_name_y = save_dir + mask_name+str(suffix)+'_y.txt'
-    
+            mask_name_x = save_dir + mask_name+str(suffix)+'_trans_x.txt'
+            mask_name_y = save_dir + mask_name+str(suffix)+'_trans_y.txt'
+            phase_name_x = save_dir + mask_name+str(suffix)+'_phase_x.txt'
+            phase_name_y = save_dir + mask_name+str(suffix)+'_phase_y.txt'
   
             with open(mask_name_x, "w") as txt_file:
                 for line in list(pixel_transmission_x):
@@ -439,8 +459,18 @@ class PulseGenerator:
                 for line in list(pixel_transmission_y):
                     txt_file.write(str(line) + "\n")
             txt_file.close()
+
+            with open(phase_name_x, "w") as txt_file:
+                for line in list(pixel_phase_x):
+                    txt_file.write(str(line) + "\n")
+            txt_file.close()
+
+            with open(phase_name_y, "w") as txt_file:
+                for line in list(pixel_phase_y):
+                    txt_file.write(str(line) + "\n")
+            txt_file.close()
             
-            return mask_name_x, mask_name_y
+            return mask_name_x, mask_name_y, phase_name_x, phase_name_y
 
 
     def _calibrate_SLM(self,calib_file):
@@ -627,7 +657,7 @@ class PulseGenerator:
                     rho_label=sim_label[i]
                 ax_2.plot(time_sim,np.abs(sim_input[i+1]),label=rho_label)
             ax_2.legend(loc = 'upper right')
-            ax_2.set_ylim([0,1])
+            ax_2.set_ylim([-0.01,1.01])
         
         ax_t.set_xlabel('time / ps')
         ax_t.set_ylabel('Pulse')
