@@ -1,13 +1,14 @@
 import numpy as np
 from scipy.special import erf
+import pyaceqd.constants as constants
 
-HBAR = 0.6582173  # meV*ps
+hbar = constants.hbar  # meV*ps
 
 class Pulse:
     def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, polar_x=1):
         self.tau = tau  # in ps
         self.e_start = e_start  # in meV
-        # self.w_start = e_start / HBAR  # in 1 / ps
+        # self.w_start = e_start / hbar  # in 1 / ps
         self.w_gain = float(w_gain)  #  in 1/ps^2
         self.t0 = t0
         self.e0 = e0
@@ -49,11 +50,11 @@ class Pulse:
         """
         if self.freq is not None:
             return self.freq(t)
-        w_start = self.e_start / HBAR  # in 1 / ps
+        w_start = self.e_start / hbar  # in 1 / ps
         return w_start + self.w_gain * (t - self.t0)
 
     def get_full_phase(self,t):
-        w_start = self.e_start / HBAR  # in 1 / ps
+        w_start = self.e_start / hbar  # in 1 / ps
         return w_start * (t - self.t0) + 0.5*self.w_gain * ((t - self.t0) **2) + self.phase
     
     def get_energies(self):
@@ -64,7 +65,7 @@ class Pulse:
         """
         low = self.get_frequency(-self.tau)
         high = self.get_frequency(self.tau)
-        energy_range = np.abs(high-low)*HBAR  # meV
+        energy_range = np.abs(high-low)*hbar  # meV
         return energy_range
 
     def get_total(self, t):

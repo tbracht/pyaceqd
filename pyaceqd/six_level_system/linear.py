@@ -1,10 +1,9 @@
-import subprocess
-import numpy as np
-import os
-from pyaceqd.tools import export_csv, output_ops_dm, compose_dm
+from pyaceqd.tools import output_ops_dm, compose_dm
 from pyaceqd.general_system.general_system import system_ace_stream
 from pyaceqd.general_system.general_dressed_states import dressed_states
+import pyaceqd.constants as constants
 
+hbar = constants.hbar  # meV*ps
 d0 = 0.25  # meV
 d1 = 0.12
 d2 = 0.05
@@ -13,7 +12,6 @@ g_ex = -0.65  # in plane electron g factor
 g_ez = -0.8  # out of plane electron g factor
 g_hx = -0.35  # in plane hole g factor
 g_hz = -2.2  # out of plane hole g factor
-hbar = 0.6582173  # meV*ps
 
 def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
     E_X = delta_E + (d0 + d1)/2.0 
