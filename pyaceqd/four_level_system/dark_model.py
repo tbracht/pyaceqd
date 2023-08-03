@@ -5,8 +5,9 @@ import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
 from pyaceqd.general_system.general_system import system_ace_stream
+import pyaceqd.constants as constants
 
-hbar = 0.6582173  # meV*ps
+hbar = constants.hbar  # meV*ps
 
 def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4"):

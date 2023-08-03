@@ -1,13 +1,14 @@
 import numpy as np
 from scipy.special import erf
+import pyaceqd.constants as constants
 
-HBAR = 0.6582173  # meV*ps
+hbar = constants.hbar  # meV*ps
 
 class Pulse:
     def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, polar_x=1):
         self.tau = tau  # in ps
         self.e_start = e_start  # in meV
-        self.w_start = e_start / HBAR  # in 1 / ps
+        # self.w_start = e_start / hbar  # in 1 / ps
         self.w_gain = float(w_gain)  #  in 1/ps^2
         self.t0 = t0
         self.e0 = e0
@@ -21,6 +22,13 @@ class Pulse:
         return "%s(tau=%r, e_start=%r, w_gain=%r, t0=%r, e0=%r)" % (
             self.__class__.__name__, self.tau, self.e_start, self.w_gain, self.t0, self.e0
         )
+    
+    def get_energy(self):
+        return self.e_start, self.w_gain
+    
+    def set_energy(self, e_start, w_gain):
+        self.e_start = e_start
+        self.w_gain = w_gain
 
     def get_envelope(self, t):
         return self.e0 * np.exp(-0.5 * ((t - self.t0) / self.tau) ** 2) / (np.sqrt(2 * np.pi) * self.tau)
@@ -42,10 +50,12 @@ class Pulse:
         """
         if self.freq is not None:
             return self.freq(t)
-        return self.w_start + self.w_gain * (t - self.t0)
+        w_start = self.e_start / hbar  # in 1 / ps
+        return w_start + self.w_gain * (t - self.t0)
 
     def get_full_phase(self,t):
-        return self.w_start * (t - self.t0) + 0.5*self.w_gain * ((t - self.t0) **2) + self.phase
+        w_start = self.e_start / hbar  # in 1 / ps
+        return w_start * (t - self.t0) + 0.5*self.w_gain * ((t - self.t0) **2) + self.phase
     
     def get_energies(self):
         """
@@ -55,12 +65,14 @@ class Pulse:
         """
         low = self.get_frequency(-self.tau)
         high = self.get_frequency(self.tau)
-        energy_range = np.abs(high-low)*HBAR  # meV
+        energy_range = np.abs(high-low)*hbar  # meV
         return energy_range
 
     def get_total(self, t):
         return self.get_envelope(t) * np.exp(-1j * self.get_full_phase(t))
 
+    def copy(self):
+        return Pulse(self.tau, self.e_start, self.w_gain, self.t0, self.e0, self.phase, self.polar_x)
 
 class ChirpedPulse(Pulse):
     def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1, phase=0):
@@ -85,6 +97,9 @@ class ChirpedPulse(Pulse):
         returns ratio of pulse area chirped/unchirped: tau / sqrt(tau * tau_0)
         """
         return np.sqrt(self.tau / self.tau_0)
+    
+    def copy(self):
+        return ChirpedPulse(self.tau_0, self.e_start, self.alpha, self.t0, self.e0, self.polar_x, self.phase)
 
 
 class PulseTrain:
@@ -134,6 +149,7 @@ class SmoothRectangle(Pulse):
     """
 
     def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, alpha_onoff=0.1, polar_x=1):
+        self.alpha_onoff = alpha_onoff
         self.alpha = 1/alpha_onoff  # switch on/off time
         super().__init__(tau, e_start, w_gain=w_gain, t0=t0, e0=e0, phase=phase, polar_x=polar_x)
 
@@ -142,4 +158,7 @@ class SmoothRectangle(Pulse):
 
     def get_envelope(self, t):
         return self.e0/( (1+np.exp(-self.alpha*(t+self.tau/2 - self.t0))) * (1+np.exp(-self.alpha*(-t+self.tau/2 + self.t0))) )
+    
+    def copy(self):
+        return SmoothRectangle(self.tau, self.e_start, self.w_gain, self.t0, self.e0, self.phase, self.alpha_onoff, self.polar_x)
     
