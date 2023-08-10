@@ -1,7 +1,7 @@
 import re
 import numpy as np
 import matplotlib.pyplot as plt
-from pyaceqd.tools import construct_t, simple_t_gaussian
+from pyaceqd.tools import construct_t, simple_t_gaussian, concurrence
 from pyaceqd.timebin.timebin import TimeBin
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -48,7 +48,7 @@ class TwoPhotonTimebin(TimeBin):
         # normalize 
         norm = np.trace(density_matrix)
         # still output both, because the diagonal contains the number of coincidence measurments
-        return density_matrix/norm, density_matrix
+        return concurrence(density_matrix/norm), density_matrix
 
     def prepare_operators(self, sigma_gx, sigma_xb, verbose=False):
         """
