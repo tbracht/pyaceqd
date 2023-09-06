@@ -6,11 +6,12 @@ from pyaceqd.tools import export_csv
 from scipy.io import savemat, loadmat
 from scipy import integrate
 from scipy import interpolate
+import configparser 
 
 hbar = 0.6582173  # meV*ps
 
 class PulseGenerator:
-    def __init__(self, t0, tend, dt,central_wavelength = 800) -> None: 
+    def __init__(self, t0, tend, dt,central_wavelength = 800, calibration_file = None) -> None: 
         # central_wavelength should match with rotating frame
         # Unit of time is ps 
         # central_f is the shift from the rotationg frame frequency
@@ -18,7 +19,13 @@ class PulseGenerator:
         self.t0 = t0
         self.tend = tend
         self.dt = dt
-        self.central_wavelength = central_wavelength
+
+        self.calibration_file = calibration_file
+        if calibration_file is  None:
+            self.central_wavelength = central_wavelength
+        else:
+            self._read_calibration_file(calibration_file)
+            
 
         self.time = np.arange(t0,tend,dt)
         self.frequencies = -np.fft.fftshift(np.fft.fftfreq(len(self.time),d=dt))
@@ -34,6 +41,27 @@ class PulseGenerator:
         self.temporal_filter_x = np.zeros_like(self.time, dtype=complex)
         self.temporal_filter_y = np.zeros_like(self.time, dtype=complex)
         
+    def _read_calibration_file(self,calibration_file):
+        config = configparser.ConfigParser()
+        config.read(calibration_file)
+
+        self.central_wavelength = float(config['EMISSION']['exciton_wavelength'])
+        self.biexciton_wavelength = float(config['EMISSION']['biexciton_wavelength'])
+        self.dark_wavelength = float(config['EMISSION']['dark_wavelength']) 
+
+        self.fss_bright = float(config['SPLITTING']['fss_bright'])
+        self.fss_dark = float(config['SPLITTING']['fss_dark']) 
+
+        self.exciton_x_emission = self._Units(self.central_wavelength,'nm') + self._Units((self.fss_bright*1e-3)/2,'mev')
+        self.exciton_y_emission = self._Units(self.central_wavelength,'nm') - self._Units((self.fss_bright*1e-3)/2,'mev')
+
+        self.biexciton_x_emission = self._Units(self.biexciton_wavelength,'nm') - self._Units((self.fss_bright*1e-3)/2,'mev')
+        self.biexciton_y_emission = self._Units(self.biexciton_wavelength,'nm') + self._Units((self.fss_bright*1e-3)/2,'mev')
+
+        self.dark_x_emission = self._Units(self.dark_wavelength,'nm') + self._Units((self.fss_dark*1e-3)/2,'mev')
+        self.dark_y_emission = self._Units(self.dark_wavelength,'nm') - self._Units((self.fss_dark*1e-3)/2,'mev')
+
+        self.tpe_resonance = (self._Units(self.central_wavelength,'nm') + self._Units(self.biexciton_wavelength,'nm'))/2
 
     ### Pulse building functions 
         # polar_x is polarisation of pulse [polar_y = sqrt(1-polar_x^2)]
@@ -498,6 +526,18 @@ class PulseGenerator:
         else:
             output = input
         return output
+    
+    def _Units_inverse(self,input,unit = 'Hz'): 
+        # transforming THz to nm and meV
+        if unit.lower()[0] == 'm': 
+            output = input*(2*np.pi*hbar) 
+        elif unit.lower()[0] == 'n': 
+            central_f = 299792.458/self.central_wavelength
+            input_f = central_f + input
+            output = 299792.458/(input_f)
+        else:
+            output = input
+        return output
 
 
     def _Taylor(self,frequency,frequency_0=0,coefficients = []):
@@ -614,7 +654,7 @@ class PulseGenerator:
 
     def plot_pulses(self,t_0 = None,t_end = None,frequ_0 = None, frequ_end = None ,plot_pol = 'both',
                     plot_phase = False, phase_time_shift = 0,domain = 'Hz',save = False,save_name = 'fig_',save_dir = '',
-                    sim_input = None,sim_label = [],plot_frequ_intensity = False):
+                    sim_input = None,sim_label = [],plot_frequ_intensity = False, plot_emission = False):
         #plotting the current pulse in both time (abs() and real() are plotted)and Fourier space (only abs() is plotted)
         if domain == 'meV':
             self.plot_domain = self.energies
@@ -698,12 +738,28 @@ class PulseGenerator:
         if plot_pol.lower()[0] == 'b' or plot_pol.lower()[0] == 'y':
             ax.plot(self.plot_domain, plot_frequency_y,'r-', label="y_envel")
             if plot_phase:
-                ax2.plot(self.plot_domain,plot_phase_y/np.pi)       
+                ax2.plot(self.plot_domain,plot_phase_y/np.pi)  
+
+        if plot_emission:
+            if self.calibration_file is None:
+                print('Provide calibration file to plot emission lines!')
+            else:
+                ax2.plot(self._Units_inverse(self.exciton_x_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'b--')
+                ax2.plot(self._Units_inverse(self.exciton_y_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'k--',label='X_emission')
+                ax2.plot(self._Units_inverse(self.biexciton_x_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'b:')
+                ax2.plot(self._Units_inverse(self.biexciton_y_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'k:',label='XX_emission')
+                ax2.plot(self._Units_inverse(self.dark_x_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'b-.')
+                ax2.plot(self._Units_inverse(self.dark_y_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'k-.',label='DX_emission')
+                ax2.set_ylim([0,1.1])
+                ax2.legend(loc = 'upper right')
         ax.set_xlim([frequ_0,frequ_end])
         ax.set_xlabel(self.domain)
         ax.grid()
-        ax.legend() 
-        ax.set_ylabel('|FT|')
+        ax.legend(loc = 'upper left') 
+        if plot_frequ_intensity:
+            ax.set_ylabel('|FT|^2')
+        else:
+            ax.set_ylabel('|FT|')
         ax2.set_ylabel('Phase / pi')
         ax.set_title('Pulses frequency')
         if save:
@@ -731,7 +787,6 @@ class PulseGenerator:
         phase_grad_x = -np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)  
         phase_grad_y = -np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)
         
-
         export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
         export_csv(phase_file_y, self.time, np.real(phase_grad_y),np.imag(phase_grad_y), precision=8, delimit=' ')  
 
