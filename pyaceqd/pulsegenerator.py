@@ -7,9 +7,10 @@ from scipy.io import savemat, loadmat
 from scipy import integrate
 from scipy import interpolate
 import configparser 
+import pyaceqd.constants as constants
 
-hbar = 0.6582173  # meV*ps
 
+hbar = constants.hbar  # meV*ps
 class PulseGenerator:
     def __init__(self, t0, tend, dt,central_wavelength = 800, calibration_file = None) -> None: 
         # central_wavelength should match with rotating frame

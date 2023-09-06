@@ -21,7 +21,7 @@ def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3
                                           # Tr(sigma^dagger*sigma * rho) = x, G1(t,0) = x(t)
                                           # second: Tr(sigma^dagger * rho) =  <|x><g|> = pxg
     options = {"gamma_e": gamma_e, "phonons": phonons, "ae": ae, "temperature": temperature, "lindblad": True, "pt_file": pt_file, "temp_dir": temp_dir,
-               "pulse_file": pulse_file, "stream": True, "output_ops": output_ops}
+               "pulse_file": pulse_file, "output_ops": output_ops}
     multitime_op = {"operator": "|0><1|_2","applyFrom": "_left", "applyBefore": "false"}
     t, tau, g1 = G1_general(t0,tend,tau0,tauend,dt,dtau,*pulses,system=tls_,multitime_op=multitime_op,coarse_t=coarse_t,workers=workers,prepare_only=prepare_only,simple_exp=simple_exp,gaussian_t=gaussian_t,**options)
     os.remove(pulse_file)
