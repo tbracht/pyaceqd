@@ -1,5 +1,7 @@
 import numpy as np
 import itertools
+import configparser 
+
 
 def _merge_intervals(intervals):
     """
@@ -236,3 +238,44 @@ def output_ops_dm(dim=[2,2], readable=False):
         dim = [dim]
     basis_states = generate_basis_states(dim)
     return matrix_element_operators(basis_states, dim, readable=readable)
+
+def read_calibration_file(calibration_file):
+
+    # reads in experimentally aquired quantum dot parameters 
+    config = configparser.ConfigParser()
+    config.read(calibration_file)
+
+    # read the calibration file
+    central_wavelength = float(config['EMISSION']['exciton_wavelength']) #nm
+    biexciton_wavelength = float(config['EMISSION']['biexciton_wavelength'])
+    dark_wavelength = float(config['EMISSION']['dark_wavelength']) 
+
+    fss_bright = float(config['SPLITTING']['fss_bright'])*1e-3 #meV
+    fss_dark = float(config['SPLITTING']['fss_dark']) *1e-3 # meV 
+
+    lifetime_exciton = float(config['LIFETIMES']['exciton']) #ps
+    lifetime_biexciton = float(config['LIFETIMES']['biexciton'])
+    lifetime_dark = float(config['LIFETIMES']['dark']) 
+
+    g_ex = float(config['G_FACTORS']['g_ex'])
+    g_hx = float(config['G_FACTORS']['g_hx'])
+    g_ez = float(config['G_FACTORS']['g_ez'])
+    g_hz = float(config['G_FACTORS']['g_hz'])
+
+    exciton_meV = 1239.8*1e3/central_wavelength #meV
+    biexciton_meV = 1239.8*1e3/biexciton_wavelength
+    dark_meV = 1239.8*1e3/dark_wavelength
+
+    exciton_x_energy = fss_bright/2
+    exciton_y_energy = -fss_bright/2
+    binding_energy = -(exciton_meV - biexciton_meV) # negatively defined
+    dark_energy = (exciton_meV - dark_meV)
+    dark_x_energy = dark_energy + fss_dark/2
+    dark_y_energy = dark_energy - fss_dark/2 
+
+    gamma_e = 1/lifetime_exciton
+    gamma_b = 1/(lifetime_biexciton*2)
+    gamma_d = 1/lifetime_dark
+
+    return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
+

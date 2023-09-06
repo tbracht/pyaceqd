@@ -6,11 +6,13 @@ from pyaceqd.tools import export_csv
 from scipy.io import savemat, loadmat
 from scipy import integrate
 from scipy import interpolate
+import configparser 
 import pyaceqd.constants as constants
+
 
 hbar = constants.hbar  # meV*ps
 class PulseGenerator:
-    def __init__(self, t0, tend, dt,central_wavelength = 800) -> None: 
+    def __init__(self, t0, tend, dt,central_wavelength = 800, calibration_file = None) -> None: 
         # central_wavelength should match with rotating frame
         # Unit of time is ps 
         # central_f is the shift from the rotationg frame frequency
@@ -18,7 +20,13 @@ class PulseGenerator:
         self.t0 = t0
         self.tend = tend
         self.dt = dt
-        self.central_wavelength = central_wavelength
+
+        self.calibration_file = calibration_file
+        if calibration_file is  None:
+            self.central_wavelength = central_wavelength
+        else:
+            self._read_calibration_file(calibration_file)
+            
 
         self.time = np.arange(t0,tend,dt)
         self.frequencies = -np.fft.fftshift(np.fft.fftfreq(len(self.time),d=dt))
@@ -34,6 +42,27 @@ class PulseGenerator:
         self.temporal_filter_x = np.zeros_like(self.time, dtype=complex)
         self.temporal_filter_y = np.zeros_like(self.time, dtype=complex)
         
+    def _read_calibration_file(self,calibration_file):
+        config = configparser.ConfigParser()
+        config.read(calibration_file)
+
+        self.central_wavelength = float(config['EMISSION']['exciton_wavelength'])
+        self.biexciton_wavelength = float(config['EMISSION']['biexciton_wavelength'])
+        self.dark_wavelength = float(config['EMISSION']['dark_wavelength']) 
+
+        self.fss_bright = float(config['SPLITTING']['fss_bright'])
+        self.fss_dark = float(config['SPLITTING']['fss_dark']) 
+
+        self.exciton_x_emission = self._Units(self.central_wavelength,'nm') + self._Units((self.fss_bright*1e-3)/2,'mev')
+        self.exciton_y_emission = self._Units(self.central_wavelength,'nm') - self._Units((self.fss_bright*1e-3)/2,'mev')
+
+        self.biexciton_x_emission = self._Units(self.biexciton_wavelength,'nm') - self._Units((self.fss_bright*1e-3)/2,'mev')
+        self.biexciton_y_emission = self._Units(self.biexciton_wavelength,'nm') + self._Units((self.fss_bright*1e-3)/2,'mev')
+
+        self.dark_x_emission = self._Units(self.dark_wavelength,'nm') + self._Units((self.fss_dark*1e-3)/2,'mev')
+        self.dark_y_emission = self._Units(self.dark_wavelength,'nm') - self._Units((self.fss_dark*1e-3)/2,'mev')
+
+        self.tpe_resonance = (self._Units(self.central_wavelength,'nm') + self._Units(self.biexciton_wavelength,'nm'))/2
 
     ### Pulse building functions 
         # polar_x is polarisation of pulse [polar_y = sqrt(1-polar_x^2)]
@@ -130,16 +159,19 @@ class PulseGenerator:
         # filters have a transmission that can be invertet (1- transmission) bu setting invert = True
         # different merging techniques can be used merging = 'x' x: + -> adding filters; * -> multiplying filters; m -> Overlaying filters
         # Filters can be applied to either('x' or 'y') or both ('b') pulse polarisations 
-    def add_filter_rectangle(self, central_f, width_f, transmission = 1 ,polarisation = 'b', invert = False,merging = '+', unit = 'Hz'):
+    def add_filter_rectangle(self, central_f = None, width_f = None, transmission = 1 ,polarisation = 'b', invert = False,merging = '+', unit = 'Hz'):
         # Square filter
-        central_f = self._Units(central_f,unit)
-        width_f = np.abs(self._Units(width_f,unit))
+        if central_f is None:
+            filter = np.ones_like(self.frequencies,dtype=complex)*transmission
+        else:
+            central_f = self._Units(central_f,unit)
+            width_f = np.abs(self._Units(width_f,unit))
 
-        filter = np.zeros_like(self.frequencies,dtype=complex)
-        filter[np.abs(self.frequencies-central_f)<=width_f/2] = transmission
+            filter = np.zeros_like(self.frequencies,dtype=complex)
+            filter[np.abs(self.frequencies-central_f)<=width_f/2] = transmission
 
-        if invert:
-            filter = (1-filter)
+            if invert:
+                filter = (1-filter)
 
         self._add_filter(filter,polarisation,merging=merging)
         pass
@@ -281,9 +313,34 @@ class PulseGenerator:
             print('WARNING: Transmission in filter > 1. Capped to 1.')
             self.frequency_filter_x[self.frequency_filter_x > 1] = 1 
             self.frequency_filter_y[self.frequency_filter_y > 1] = 1 
-    ### SLM
+   
     
-                
+    ### Devices from the lab 
+    # pulse shaper
+    def apply_pulse_shaper(self,slit_position_f,transmission = 1, slit_width_f = None, slit_rise_f = None, min_f = None, max_f = None, calibration_file = None, pol = 'b',unit = 'Hz'):
+        # applies a slit filter to the pulse, given a slit_width_f and a slit_rise_f
+        # if a calibration_file is specified, the slit_width_f and slit_rise_f are ignored
+        # the calibration_file is in nm
+        if calibration_file is not None:
+            pass# to do 
+        else:
+            slit_width_f = self._Units(slit_width_f,unit)
+            slit_rise_f = self._Units(slit_rise_f,unit)
+            min_f = self._Units(min_f,unit)
+            max_f = self._Units(max_f,unit)
+
+        slit_position_f = self._Units(slit_position_f,unit)
+
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'x':
+            self.add_filter_sigmoid(central_f=slit_position_f, width_f=slit_width_f, rise_f=slit_rise_f, polarisation='x',transmission = transmission)
+            self.apply_frequency_filter(pol='x')
+        if pol.lower()[0] == 'b' or pol.lower()[0] == 'y':
+            self.add_filter_sigmoid(central_f=slit_position_f, width_f=slit_width_f, rise_f=slit_rise_f, polarisation='y',transmission = transmission)
+            self.apply_frequency_filter(pol='y')
+        
+        pass
+
+    # SLM   
     def apply_SLM(self, pixelwidth = None, pixel_center = 0, N_pixel = 128, unit = 'Hz', kind = 'rectangle',polarisation = 'both',
                    SLM = 'amp',generate_mask = False, save_dir = '', mask_name = 'mask_output',
                    suffix = 0,psf_width = None,psf_sig_fwhm = 'fwhm',calibration_file = None, orientation = 'rising',
@@ -322,6 +379,9 @@ class PulseGenerator:
 
         pixel_transmission_x = []
         pixel_transmission_y = []
+
+        pixel_phase_x = []
+        pixel_phase_y = []
        
             
         if polarisation.lower()[0] == 'b' or polarisation.lower()[0] == 'x':
@@ -343,31 +403,44 @@ class PulseGenerator:
                     
                 if SLM.lower() == 'ap':
                     self.frequency_filter_x[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.mean(np.angle(cur_slice)))
+                    pixel_transmission_x.append(np.mean(np.abs(cur_slice)))
+                    pixel_phase_x.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'p':
                     self.frequency_filter_x[L_slice] = np.abs(cur_slice)*np.exp(1j*np.mean(np.angle(cur_slice)))
-                    pixel_transmission_x.append(np.mean(np.angle(cur_slice)))
+                    pixel_transmission_x.append(1)
+                    pixel_phase_x.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'a':
                     self.frequency_filter_x[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.angle(cur_slice))
                     pixel_transmission_x.append(np.mean(np.abs(cur_slice))) # <-- carefull
+                    pixel_phase_x.append(0)
             if polarisation.lower()[0] == 'b' or polarisation.lower()[0] == 'y':
                 if pixel_transmission_mask is None:
                     cur_slice = self.frequency_filter_y[L_slice]
                 else:
                     cur_slice = pixel_transmission_mask[N_pixel -1 -i]
+
                 if SLM.lower() == 'ap':
                     self.frequency_filter_y[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.mean(np.angle(cur_slice)))
+                    pixel_transmission_y.append(np.mean(np.abs(cur_slice)))
+                    pixel_phase_y.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'p':
                     self.frequency_filter_y[L_slice] = np.abs(cur_slice)*np.exp(1j*np.mean(np.angle(cur_slice)))
-                    pixel_transmission_y.append(np.mean(np.angle(cur_slice)))
+                    pixel_transmission_y.append(1)
+                    pixel_phase_y.append(np.mean(np.angle(cur_slice)))
                 elif SLM.lower()[0] == 'a':
                     self.frequency_filter_y[L_slice] = np.mean(np.abs(cur_slice))*np.exp(1j*np.angle(cur_slice))
                     pixel_transmission_y.append(np.mean(np.abs(cur_slice)))
+                    pixel_phase_y.append(0)
         if orientation.lower()[0] == 'r':    
             pixel_transmission_x = np.flipud(np.array(pixel_transmission_x))
             pixel_transmission_y = np.flipud(np.array(pixel_transmission_y))
+            pixel_phase_x = np.flipud(np.array(pixel_phase_x))
+            pixel_phase_y = np.flipud(np.array(pixel_phase_y))
         elif orientation.lower()[0] == 'f':
             pixel_transmission_x = np.array(pixel_transmission_x)
             pixel_transmission_y = np.array(pixel_transmission_y)
+            pixel_phase_x = np.array(pixel_phase_x)
+            pixel_phase_y = np.array(pixel_phase_y)
 
         if kind.lower()[0] == 'p':
             if psf_width is None:
@@ -401,9 +474,10 @@ class PulseGenerator:
       
                 
         if generate_mask: 
-            mask_name_x = save_dir + mask_name+str(suffix)+'_x.txt'
-            mask_name_y = save_dir + mask_name+str(suffix)+'_y.txt'
-    
+            mask_name_x = save_dir + mask_name+str(suffix)+'_trans_x.txt'
+            mask_name_y = save_dir + mask_name+str(suffix)+'_trans_y.txt'
+            phase_name_x = save_dir + mask_name+str(suffix)+'_phase_x.txt'
+            phase_name_y = save_dir + mask_name+str(suffix)+'_phase_y.txt'
   
             with open(mask_name_x, "w") as txt_file:
                 for line in list(pixel_transmission_x):
@@ -414,8 +488,18 @@ class PulseGenerator:
                 for line in list(pixel_transmission_y):
                     txt_file.write(str(line) + "\n")
             txt_file.close()
+
+            with open(phase_name_x, "w") as txt_file:
+                for line in list(pixel_phase_x):
+                    txt_file.write(str(line) + "\n")
+            txt_file.close()
+
+            with open(phase_name_y, "w") as txt_file:
+                for line in list(pixel_phase_y):
+                    txt_file.write(str(line) + "\n")
+            txt_file.close()
             
-            return mask_name_x, mask_name_y
+            return mask_name_x, mask_name_y, phase_name_x, phase_name_y
 
 
     def _calibrate_SLM(self,calib_file):
@@ -440,6 +524,18 @@ class PulseGenerator:
             input_f = 299792.458/(self.central_wavelength+input)
             output = central_f-input_f
             output = - output
+        else:
+            output = input
+        return output
+    
+    def _Units_inverse(self,input,unit = 'Hz'): 
+        # transforming THz to nm and meV
+        if unit.lower()[0] == 'm': 
+            output = input*(2*np.pi*hbar) 
+        elif unit.lower()[0] == 'n': 
+            central_f = 299792.458/self.central_wavelength
+            input_f = central_f + input
+            output = 299792.458/(input_f)
         else:
             output = input
         return output
@@ -559,7 +655,7 @@ class PulseGenerator:
 
     def plot_pulses(self,t_0 = None,t_end = None,frequ_0 = None, frequ_end = None ,plot_pol = 'both',
                     plot_phase = False, phase_time_shift = 0,domain = 'Hz',save = False,save_name = 'fig_',save_dir = '',
-                    sim_input = None,sim_label = [],plot_frequ_intensity = False):
+                    sim_input = None,sim_label = [],plot_frequ_intensity = False, plot_emission = False):
         #plotting the current pulse in both time (abs() and real() are plotted)and Fourier space (only abs() is plotted)
         if domain == 'meV':
             self.plot_domain = self.energies
@@ -602,7 +698,7 @@ class PulseGenerator:
                     rho_label=sim_label[i]
                 ax_2.plot(time_sim,np.abs(sim_input[i+1]),label=rho_label)
             ax_2.legend(loc = 'upper right')
-            ax_2.set_ylim([0,1])
+            ax_2.set_ylim([-0.01,1.01])
         
         ax_t.set_xlabel('time / ps')
         ax_t.set_ylabel('Pulse')
@@ -643,12 +739,28 @@ class PulseGenerator:
         if plot_pol.lower()[0] == 'b' or plot_pol.lower()[0] == 'y':
             ax.plot(self.plot_domain, plot_frequency_y,'r-', label="y_envel")
             if plot_phase:
-                ax2.plot(self.plot_domain,plot_phase_y/np.pi)       
+                ax2.plot(self.plot_domain,plot_phase_y/np.pi)  
+
+        if plot_emission:
+            if self.calibration_file is None:
+                print('Provide calibration file to plot emission lines!')
+            else:
+                ax2.plot(self._Units_inverse(self.exciton_x_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'b--')
+                ax2.plot(self._Units_inverse(self.exciton_y_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'k--',label='X_emission')
+                ax2.plot(self._Units_inverse(self.biexciton_x_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'b:')
+                ax2.plot(self._Units_inverse(self.biexciton_y_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'k:',label='XX_emission')
+                ax2.plot(self._Units_inverse(self.dark_x_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'b-.')
+                ax2.plot(self._Units_inverse(self.dark_y_emission,unit=domain)*np.array([1,1]),np.array([0,1]),'k-.',label='DX_emission')
+                ax2.set_ylim([0,1.1])
+                ax2.legend(loc = 'upper right')
         ax.set_xlim([frequ_0,frequ_end])
         ax.set_xlabel(self.domain)
         ax.grid()
-        ax.legend() 
-        ax.set_ylabel('|FT|')
+        ax.legend(loc = 'upper left') 
+        if plot_frequ_intensity:
+            ax.set_ylabel('|FT|^2')
+        else:
+            ax.set_ylabel('|FT|')
         ax2.set_ylabel('Phase / pi')
         ax.set_title('Pulses frequency')
         if save:
@@ -673,10 +785,9 @@ class PulseGenerator:
         phase_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
 
         
-        phase_grad_x = np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)*hbar  
-        phase_grad_y = np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)*hbar
+        phase_grad_x = -np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)  
+        phase_grad_y = -np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)
         
-
         export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
         export_csv(phase_file_y, self.time, np.real(phase_grad_y),np.imag(phase_grad_y), precision=8, delimit=' ')  
 
