@@ -71,8 +71,7 @@ def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamm
         return compose_dm(result, dim=6)
     return result
 
-def sixls_linear_dressed_states(t_start, t_end, *pulses, plot=True, filename="sixls_linear_dressed", firstonly=False, **options):
+def sixls_linear_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="sixls_linear_dressed", firstonly=False, **options):
     colors = ["#0000cf", "#45b0ee", "#ff0022", "#9966cc", "#009e00", "#ffde39"]
     dim = 6
-    return dressed_states(sixls_linear, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=colors, **options)
-
+    return dressed_states(sixls_linear, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=colors, **options)

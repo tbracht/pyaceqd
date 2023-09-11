@@ -22,7 +22,7 @@ def select_equally_spaced_colors(n):
     
     return colors
 
-def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, filename="dressed", firstonly=False, colors=None, **options):
+def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, **options):
     options["output_ops"] = output_ops_dm(dim)
     # firstonly is not used when calculating the density matrix, only for the composition of the dressed states
     _,rho = compose_dm(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
@@ -31,9 +31,9 @@ def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, filename="dr
     data = system(t_start, t_end, *pulses, **options)
     if colors is None:
         colors = select_equally_spaced_colors(n=np.prod(dim))
-    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot)
+    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim)
 
-def _dressed_states(dim, data, rho, colors, filename, plot=False):
+def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None):
     _dim = np.prod(dim)
     t = data[0].real
     if plot:
@@ -42,6 +42,8 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False):
         labels = basis_states(dim)
         for i in range(_dim):
             plt.plot(t, rho[:,i,i].real, label=labels[i],color=colors[i])
+        if t_lim is not None:
+            plt.xlim(t_lim[0],t_lim[1])
         plt.xlabel("t (ps)")
         plt.ylabel("occupation")
         plt.legend()
@@ -104,6 +106,10 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False):
         if plot:
             plt.scatter(t,e_values[:,i],c=colors)
     if plot:
+        if t_lim is not None:
+            plt.xlim(t_lim[0],t_lim[1])
+        if e_lim is not None:
+            plt.ylim(e_lim[0],e_lim[1])
         for i in range(_dim):
             plt.plot(t,e_values[:,i],label="ds{}".format(i+1))
         plt.legend()
@@ -125,6 +131,8 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False):
     if plot:
         plt.clf()
         plt.ylim(-0.1,1.1)
+        if t_lim is not None:
+            plt.xlim(t_lim[0],t_lim[1])
         for i in range(_dim):
             plt.scatter(t,ds_occ[:,i],c=s_colors[i])
         for i in range(_dim):
