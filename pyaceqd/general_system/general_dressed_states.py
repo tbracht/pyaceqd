@@ -22,7 +22,7 @@ def select_equally_spaced_colors(n):
     
     return colors
 
-def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, **options):
+def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, **options):
     options["output_ops"] = output_ops_dm(dim)
     # firstonly is not used when calculating the density matrix, only for the composition of the dressed states
     _,rho = compose_dm(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
@@ -31,9 +31,9 @@ def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, 
     data = system(t_start, t_end, *pulses, **options)
     if colors is None:
         colors = select_equally_spaced_colors(n=np.prod(dim))
-    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim)
+    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states)
 
-def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None):
+def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None):
     _dim = np.prod(dim)
     t = data[0].real
     if plot:
@@ -83,8 +83,17 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_
         r_array[i] = hex_to_rgba(colors[i])[0]/255
         g_array[i] = hex_to_rgba(colors[i])[1]/255
         b_array[i] = hex_to_rgba(colors[i])[2]/255
-        a_array[i] = hex_to_rgba(colors[i])[3]/255
-        a_array_gp[i] = 1-hex_to_rgba(colors[i])[3]/255
+        if visible_states is None:
+            a_array[i] = hex_to_rgba(colors[i])[3]/255
+            a_array_gp[i] = 1-hex_to_rgba(colors[i])[3]/255
+
+    if visible_states is not None:
+        # check that no value will be OOB
+        if np.max(visible_states) > _dim-1:
+            print("Error: Visible states out of bounds.")
+            return
+        a_array[visible_states] = 1
+        a_array_gp[visible_states] = 0
     # r_array = np.array([0,255])/255
     # g_array = np.array([0,0])/255
     # b_array = np.array([255,0])/255
@@ -142,5 +151,5 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_
         plt.legend()
         plt.savefig(filename + "_ds_occ.png")
         plt.clf()
-
-    return t, e_values, ds_occ, s_colors
+    populations = np.diagonal(rho, axis1=1, axis2=2)
+    return t, populations, e_values, ds_occ, s_colors, n_colors

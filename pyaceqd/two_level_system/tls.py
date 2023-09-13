@@ -35,11 +35,11 @@ def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10
                   firstonly=firstonly)
     return result
 
-def tls_dressed_states(t_start, t_end, *pulses, plot=True, filename="tls_dressed", firstonly=False, **options):
+def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, visible_states=None, **options):
     # dim = 2 for TLS
     colors=["#0000FF", "#FF0000"]
     dim = 2
-    return dressed_states(tls_, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=colors, **options)
+    return dressed_states(tls_, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=colors, visible_states=visible_states, **options)
 
 def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], initial=None, dressedstates=False, rf=False, rf_file=None, firstonly=False):
@@ -124,12 +124,12 @@ def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06,
                   firstonly=firstonly)
     return result
 
-def tls_photons_dressed_states(t_start, t_end, *pulses, plot=True, filename="tls_photons_dressed", firstonly=False, **options):
+def tls_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_photons_dressed", firstonly=False, visible_states=None, **options):
     # dim = 2 for TLS
     n1 = options["n_phot1"] + 1
     n2 = options["n_phot2"] + 1
     dim = [2,n1,n2]
-    return dressed_states(tls_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=None, **options)
+    return dressed_states(tls_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
 
 def tls_ace(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, generate_pt=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   apply_op=None, apply_op_t=0, apply="", ninterm=10, pulse_file=None):

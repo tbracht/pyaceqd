@@ -29,10 +29,10 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
                   dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
-def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, filename="biexciton_dressed", firstonly=False, **options):
+def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="biexciton_dressed", firstonly=False, visible_states=None, **options):
     colors = ["#0000FF", "#00CC33", "#F9A627", "#FF0000"]
     dim = 4
-    return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=colors, **options)
+    return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=colors, visible_states=visible_states, **options)
 
 def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", n_photon=1,
@@ -88,11 +88,11 @@ def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, ga
                   dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
-def biexciton_photons_dressed_states(t_start, t_end, *pulses, plot=True, filename="tls_photons_dressed", firstonly=False, **options):
+def biexciton_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_photons_dressed", firstonly=False, visible_states=None, **options):
     # dim = 2 for TLS
     n = options["n_photon"] + 1
     dim = [2,n,n]
-    return dressed_states(biexciton_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=None, **options)
+    return dressed_states(biexciton_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
 
 def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_18 + |1><1|_18 + |2><2|_18 + |3><3|_18 + |4><4|_18 + |5><5|_18","|6><6|_18 + |7><7|_18 + |8><8|_18 + |9><9|_18","|10><10|_18 + |11><11|_18 + |12><12|_18 + |13><13|_18","|14><14|_18 + |15><15|_18 + |16><16|_18 + |17><17|_18"], initial="|0><0|_18",
@@ -140,6 +140,6 @@ def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delt
                   dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
-def biexciton_photons_extended_dressed_states(t_start, t_end, *pulses, plot=True, filename="biexciton_photons_extended_dressed", firstonly=False, **options):
+def biexciton_photons_extended_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="biexciton_photons_extended_dressed", firstonly=False, visible_states=None, **options):
     dim = 18
-    return dressed_states(biexciton_photons_extended, dim, t_start, t_end, *pulses, filename=filename, plot=plot, firstonly=firstonly, colors=None, **options)
+    return dressed_states(biexciton_photons_extended, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
