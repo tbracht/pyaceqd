@@ -23,30 +23,50 @@ class TwoPhotonTimebinNew(TimeBin):
             self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
 
 
-    def calc_densitymatrix(self):
+    def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix"):
+        """
+        calculates the density matrix of the system, using the G2 functions.
+        The density matrix is calculated in the basis |ee>, |el>, |le>, |ll>
+        """
         density_matrix = np.zeros([4,4], dtype=complex)
         # trace
-        _,_,density_matrix[0,0] = self.rho_ee_ee()
-        _,_,density_matrix[1,1] = self.rho_el_el()
-        _,_,density_matrix[2,2] = self.rho_le_le()
-        _,_,density_matrix[3,3] = self.rho_ll_ll()
+        t,G2_EEEE,density_matrix[0,0],_,_ = self.rho_ee_ee()
+        _,G2_ELEL,density_matrix[1,1] = self.rho_el_el()
+        _,G2_LELE,density_matrix[2,2] = self.rho_le_le()
+        _,G2_LLLL,density_matrix[3,3],_,_ = self.rho_ll_ll()
         # ee_xx
-        _,_,density_matrix[0,1] = self.rho_ee_el()
+        _,G2_EEEL,density_matrix[0,1],_,_ = self.rho_ee_el()
         density_matrix[1,0] = np.conj(density_matrix[0,1])
-        density_matrix[0,2] = 0 # self.rho_ee_le()
+        _,G2_EELE,density_matrix[0,2],_,_ = self.rho_ee_le()
         density_matrix[2,0] = np.conj(density_matrix[0,2])
-        _,_,density_matrix[0,3] = self.rho_ee_ll()
+        _,G2_EELL,density_matrix[0,3],_,_ = self.rho_ee_ll()
         density_matrix[3,0] = np.conj(density_matrix[0,3])
         # el_xx
-        density_matrix[1,2] = 0  # self.rho_el_le()
+        _,G2_ELLE,density_matrix[1,2],_,_ = self.rho_el_le()
         density_matrix[2,1] = np.conj(density_matrix[1,2])
-        _,_,density_matrix[1,3] = self.rho_el_ll()
+        _,G2_ELLL,density_matrix[1,3],_,_ = self.rho_el_ll()
         density_matrix[3,1] = np.conj(density_matrix[1,3])
         # le_ll
-        density_matrix[2,3] = 0  # self.rho_le_ll()
+        _,G2_LELL,density_matrix[2,3],_,_ = self.rho_le_ll()
         density_matrix[3,2] = np.conj(density_matrix[2,3])
         # normalize 
         norm = np.trace(density_matrix)
+
+        if save_dm:
+            np.save(filename+".npy", density_matrix)
+        if save_all:
+            np.save(filename+".npy", density_matrix)
+            np.save(filename+"_t.npy", t)
+            np.save(filename+"_G2_EEEE.npy", G2_EEEE)
+            np.save(filename+"_G2_ELEL.npy", G2_ELEL)
+            np.save(filename+"_G2_LELE.npy", G2_LELE)
+            np.save(filename+"_G2_LLLL.npy", G2_LLLL)
+            np.save(filename+"_G2_EEEL.npy", G2_EEEL)
+            np.save(filename+"_G2_EELE.npy", G2_EELE)
+            np.save(filename+"_G2_EELL.npy", G2_EELL)
+            np.save(filename+"_G2_ELLE.npy", G2_ELLE)
+            np.save(filename+"_G2_ELLL.npy", G2_ELLL)
+            np.save(filename+"_G2_LELL.npy", G2_LELL)
         # still output both, because the diagonal contains the number of coincidence measurments
         return concurrence(density_matrix/norm), density_matrix
 
@@ -230,7 +250,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return self.rho_el_el(output_ops=output_ops, sigma_X=sigma_X, sigma_Xdag=sigma_Xdag)
 
     # the remaining three ee_xx
-    def rho_ee_ll(self):
+    def rho_ee_ll(self, use_second_zero=False):
         """
         correlations between EE and LL states. this includes four different times, but we only have two 'time-axes',
         and one of those always starts at the end of the other. This allows us to calculate the correlation functions
@@ -250,8 +270,11 @@ class TwoPhotonTimebinNew(TimeBin):
         sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
-        t1, _G2_2, eell_2 = self.four_time(output_ops, sigma_xdag, sigma_bdag, sigma_x)
-        return t1, _G2_1 + _G2_2, eell_1 + eell_2
+        _G2_2 = _G2_1 * 0
+        eell_2 = eell_1 * 0
+        if not use_second_zero:
+            t1, _G2_2, eell_2 = self.four_time(output_ops, sigma_xdag, sigma_bdag, sigma_x)
+        return t1, _G2_1 + _G2_2, eell_1 + eell_2, _G2_1, _G2_2
 
     def rho_ee_el(self, operators=None):
         output_ops = [self.sigma_x]
@@ -306,10 +329,10 @@ class TwoPhotonTimebinNew(TimeBin):
                     futures[k] = futures[k].result()
                 # futures now contains t,pgx for every j
                 t2_array = t1[i:]  # array for the second time-axis
-                temp_t2 = np.zeros_like(t2_array)
+                temp_t2 = np.zeros_like(t2_array, dtype=complex)
                 for k in range(0,len(t2_array)):
                     # pgx
-                    temp_t2[k] = np.abs(futures[k][1][-1])
+                    temp_t2[k] = futures[k][1][-1]
                 _G2[i] = np.trapz(temp_t2, t2_array)
             return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
 
@@ -354,10 +377,10 @@ class TwoPhotonTimebinNew(TimeBin):
                     futures[k] = futures[k].result()
                 # futures now contains t,pgx for every j
                 t2_array = t1[i:]  # array for the second time-axis
-                temp_t2 = np.zeros_like(t2_array)
+                temp_t2 = np.zeros_like(t2_array, dtype=complex)
                 for k in range(0,len(t2_array)):
                     # pgx
-                    temp_t2[k] = np.abs(futures[k][1][-1])
+                    temp_t2[k] = futures[k][1][-1]
                 _G2[i] = np.trapz(temp_t2, t2_array)
             return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
 
@@ -387,7 +410,7 @@ class TwoPhotonTimebinNew(TimeBin):
                     # loop over t2: starts at t1
                     for j in range(len(t1)-i):
                         # j=0 is a special case that has to be addressed
-                        _t2 = _t1[j+i]
+                        _t2 = t1[j+i]
                         _t3_end = _t2 + self.tb
                         sigma_1_new = dict(sigma_1)
                         sigma_2_new = dict(sigma_2)
@@ -407,129 +430,29 @@ class TwoPhotonTimebinNew(TimeBin):
                 futures[k] = futures[k].result()
             # futures now contains t,out_op[1],out_op[2] for every j
             t2_array = t1[i:]  # array for the second time-axis
-            temp_t2 = np.zeros_like(t2_array)
+            temp_t2 = np.zeros_like(t2_array, dtype=complex)
             # j=0 special case
-            temp_t2[0] = np.abs(futures[0][2][-1])
+            temp_t2[0] = futures[0][2][-1]
             for k in range(1,len(t2_array)):
-                temp_t2[k] = np.abs(futures[k][1][-1])
+                temp_t2[k] = futures[k][1][-1]
             _G2[i] = np.trapz(temp_t2, t2_array)
         return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
 
     def rho_el_le(self):
         # case t1 <= t2
-        def _part_t1_le_t2():
-            output_ops = [self.sigma_xdag, self.sigma_xdag + "*" + self.sigma_b]
-            sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
-            sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
-            sigma_b = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
-
-            t1 = self.t1
-            _G2 = np.zeros([len(t1)], dtype=complex)
-            # loop over t1
-            for i in tqdm.trange(len(t1),leave=None):
-                # tau1: use the interval 0,...,tb-t1
-                # i.e., if t1 = 0,...,tx then tau1 expands to absolute times of tx,...,tb
-                _t1 = t1[i]
-                futures = []
-                with tqdm.tqdm(total=len(t1)-i, leave=None) as tq:
-                    with ThreadPoolExecutor(max_workers=self.workers) as executor:
-                        # loop over t2: starts at t1
-                        for j in range(len(t1)-i):
-                            # j=0 is a special case that has to be addressed
-                            _t2 = _t1[j+i]
-                            _t3_end = _t2 + self.tb
-
-                            sigma_bdag_new = dict(sigma_bdag)
-                            sigma_x_new = dict(sigma_x)
-                            sigma_b_new = dict(sigma_b)
-                            # add correct times
-                            sigma_bdag_new["time"] = _t1
-                            sigma_x_new["time"] = _t2
-                            sigma_b_new["time"] = _t1 + self.tb
-                            # the order of the operators is important to catch the special case where t1=t2
-                            # because then ACE applies the operator first, that is first in the parameter file
-                            multitime_op_new = [sigma_bdag_new,sigma_x_new,sigma_b_new]
-                            _e = executor.submit(self.system,0,_t3_end,multitime_op=multitime_op_new, suffix=j, output_ops=output_ops, **self.options)
-                            _e.add_done_callback(lambda f: tq.update())
-                            futures.append(_e)
-                for k in range(len(futures)):
-                    # futures are still 'future' objects
-                    futures[k] = futures[k].result()
-                # futures now contains t,out_op[1],out_op[2] for every j
-                t2_array = t1[i:]  # array for the second time-axis
-                temp_t2 = np.zeros_like(t2_array)
-                # j=0 special case
-                temp_t2[0] = np.abs(futures[0][2][-1])
-                for k in range(1,len(t2_array)):
-                    temp_t2[k] = np.abs(futures[k][1][-1])
-                _G2[i] = np.trapz(temp_t2, t2_array)
-            return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
-        
-        # case t2 <= t1
-        def _part_t2_le_t1():
-            # order of the operators and times is different here
-            output_ops = [self.sigma_b, self.sigma_xdag + "*" + self.sigma_b]
-            sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
-            sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
-            sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
-
-            t1 = self.t1
-            _G2 = np.zeros([len(t1)], dtype=complex)
-            # loop over t1
-            for i in tqdm.trange(len(t1),leave=None):
-                # tau1: use the interval 0,...,tb-t1
-                # i.e., if t1 = 0,...,tx then tau1 expands to absolute times of tx,...,tb
-                _t1 = t1[i]
-                futures = []
-                with tqdm.tqdm(total=len(t1)-i, leave=None) as tq:
-                    with ThreadPoolExecutor(max_workers=self.workers) as executor:
-                        # loop over t2: starts at t1
-                        for j in range(len(t1)-i):
-                            # j=0 is a special case that has to be addressed
-                            _t2 = _t1[j+i]
-                            _t3_end = _t2 + self.tb
-
-                            sigma_bdag_new = dict(sigma_bdag)
-                            sigma_x_new = dict(sigma_x)
-                            sigma_xdag_new = dict(sigma_xdag)
-                            # add correct times
-                            sigma_x_new["time"] = _t1
-                            sigma_bdag_new["time"] = _t2
-                            sigma_xdag_new["time"] = _t1 + self.tb
-                            # the order of the operators is important to catch the special case where t1=t2
-                            # because then ACE applies the operator first, that is first in the parameter file
-                            multitime_op_new = [sigma_x_new,sigma_bdag_new,sigma_xdag_new]
-                            _e = executor.submit(self.system,0,_t3_end,multitime_op=multitime_op_new, suffix=j, output_ops=output_ops, **self.options)
-                            _e.add_done_callback(lambda f: tq.update())
-                            futures.append(_e)
-                for k in range(len(futures)):
-                    # futures are still 'future' objects
-                    futures[k] = futures[k].result()
-                # futures now contains t,out_op[1],out_op[2] for every j
-                t2_array = t1[i:]  # array for the second time-axis
-                temp_t2 = np.zeros_like(t2_array)
-                # j=0 special case
-                temp_t2[0] = np.abs(futures[0][2][-1])
-                for k in range(1,len(t2_array)):
-                    temp_t2[k] = np.abs(futures[k][1][-1])
-                _G2[i] = np.trapz(temp_t2, t2_array)
-            return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
-
-        # t1, _G21, elle_1 = _part_t1_le_t2()
         output_ops = [self.sigma_xdag, self.sigma_xdag + "*" + self.sigma_b]
         sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_b = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
         t1, _G21, elle_1 = self.four_time(output_ops, sigma_bdag, sigma_x, sigma_b)
 
+        # case t2 <= t1
         output_ops = [self.sigma_b, self.sigma_xdag + "*" + self.sigma_b]
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
         t1, _G22, elle_2 = self.four_time(output_ops, sigma_x, sigma_bdag, sigma_xdag)
-
-        # t1, _G22, elle_2 = _part_t2_le_t1()
-        return t1, _G21 + _G22, elle_1 + elle_2
+        return t1, _G21 + _G22, elle_1 + elle_2, _G21, _G22
 
     def rho_el_ll(self, calc_lell=False):
         # case t1 <= t2
@@ -574,14 +497,14 @@ class TwoPhotonTimebinNew(TimeBin):
             for i in range(len(t1)):
                 # t2 = t1,...,tb
                 n_t2 = n_tau - int((t1[i])/self.dt)
-                temp_t2 = np.zeros(n_t2+1)
+                temp_t2 = np.zeros(n_t2+1, dtype=complex)
                 # special case tau=0:
                 # which is the value with index [-(n_tau+1)] with the second output operator 
-                temp_t2[0] = np.abs(futures[i][2][-(n_t2+1)])
+                temp_t2[0] = futures[i][2][-(n_t2+1)]
                 # futures[i][2] are the values of the second output operators for tau0, [1] are the values of the first output operator
                 # here, we want the values of the first output operator for every t2=t1,..,tb
                 if n_t2 > 0: 
-                    temp_t2[1:n_t2+1] = np.abs(futures[i][1][-n_t2:])
+                    temp_t2[1:n_t2+1] = futures[i][1][-n_t2:]
                 t_new = t2[:len(temp_t2)]
                 # integrate over t_new
                 _G2[i] = np.trapz(temp_t2,t_new)
@@ -633,11 +556,11 @@ class TwoPhotonTimebinNew(TimeBin):
                     futures[k] = futures[k].result()
                 # futures now contains t,out_op[1],out_op[2] for every j
                 t2_array = t1[i:]  # array for the second time-axis
-                temp_t2 = np.zeros_like(t2_array)
+                temp_t2 = np.zeros_like(t2_array, dtype=complex)
                 # j=0 special case
-                temp_t2[0] = np.abs(futures[0][2][-1])
+                temp_t2[0] = futures[0][2][-1]
                 for k in range(1,len(t2_array)):
-                    temp_t2[k] = np.abs(futures[k][1][-1])
+                    temp_t2[k] = futures[k][1][-1]
                 _G2[i] = np.trapz(temp_t2, t2_array)
             return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
         
