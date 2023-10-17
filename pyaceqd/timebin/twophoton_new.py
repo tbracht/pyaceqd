@@ -23,7 +23,7 @@ class TwoPhotonTimebinNew(TimeBin):
             self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
 
 
-    def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix"):
+    def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix", verbose=False):
         """
         calculates the density matrix of the system, using the G2 functions.
         The density matrix is calculated in the basis |ee>, |el>, |le>, |ll>
@@ -67,6 +67,12 @@ class TwoPhotonTimebinNew(TimeBin):
             np.save(filename+"_G2_ELLE.npy", G2_ELLE)
             np.save(filename+"_G2_ELLL.npy", G2_ELLL)
             np.save(filename+"_G2_LELL.npy", G2_LELL)
+        if verbose:
+            # print density matrix nicely formatted
+            print("density matrix:")
+            print(np.array2string(density_matrix, formatter={'complex_kind': lambda x: "%.3f+%.3fj" % (x.real, x.imag)}))
+            print("normalized density matrix:")
+            print(np.array2string(density_matrix/norm, formatter={'complex_kind': lambda x: "%.3f+%.3fj" % (x.real, x.imag)}))
         # still output both, because the diagonal contains the number of coincidence measurments
         return concurrence(density_matrix/norm), density_matrix
 

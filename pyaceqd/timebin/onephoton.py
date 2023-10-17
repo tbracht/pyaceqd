@@ -34,8 +34,10 @@ class OnePhotonTimebin(TimeBin):
             rho_el = np.trapz(np.abs(rho_el_g1),t1)
         rho_el = rho_el * self.gamma_e
         if verbose:
-            print("ee:{}, ll:{}, el:{}".format(rho_ee,rho_ll,rho_el))
-            print("ee:{}, ll:{}, el:{}".format(rho_ee/norm,rho_ll/norm,rho_el/norm))
+            print("not normalized:")
+            print("EE:{}, LL:{}, EL:{}".format(rho_ee,rho_ll,rho_el))
+            print("normalized:")
+            print("EE:{}, LL:{}, EL:{}".format(rho_ee/norm,rho_ll/norm,rho_el/norm))
         return rho_ee, rho_ll, rho_el, norm
 
     def prepare_operators(self, sigma_x, verbose=False):
