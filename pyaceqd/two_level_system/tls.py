@@ -13,7 +13,7 @@ import pyaceqd.constants as constants
 hbar = constants.hbar  # meV*ps
 
 def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False):
+         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, **options):
     system_prefix = "tls"
     system_op = None
     boson_op = "1*|1><1|_2"

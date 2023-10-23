@@ -108,18 +108,17 @@ class PulseTrain:
     multi-pulse schemes.
     """
 
-    def __init__(self, delta_t, n_pulses, *pulses, start=0):
+    def __init__(self, delta_t, n_pulses, *pulses, t_shift=0):
         self.delta_t = delta_t
         self.n_pulses = n_pulses
-        self.start = start
         self.pulses = list(pulses)
-        self.start = start
+        self.t_shift = t_shift
 
     def get_total(self, t):
         field = np.zeros_like(t,dtype=complex)
         for i in range(self.n_pulses):
             for p in self.pulses:
-                field += p.get_total(t-self.delta_t*i-self.start)
+                field += p.get_total(t-self.delta_t*i-self.t_shift)
         return field
 
     def get_total_xy(self, t):
@@ -127,8 +126,8 @@ class PulseTrain:
         field_y = np.zeros_like(field_x)
         for i in range(self.n_pulses):
             for p in self.pulses:
-                field_x += p.polar_x * p.get_total(t-self.delta_t*i-self.start)
-                field_y += p.polar_y * p.get_total(t-self.delta_t*i-self.start)
+                field_x += p.polar_x * p.get_total(t-self.delta_t*i-self.t_shift)
+                field_y += p.polar_y * p.get_total(t-self.delta_t*i-self.t_shift)
         return field_x, field_y
 
 class CWLaser(Pulse):
