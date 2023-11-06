@@ -4,6 +4,7 @@ from pyaceqd.tools import export_csv, construct_t, concurrence, simple_t_gaussia
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
 import matplotlib.pyplot as plt
+from pyaceqd.constants import hbar
 
 class PolarizatzionEntanglement():
     def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, verbose=False, workers=2, options={}) -> None:
@@ -101,6 +102,74 @@ class PolarizatzionEntanglement():
         norm = np.trace(density_matrix)
         density_matrix = density_matrix / norm
         return concurrence(density_matrix)
+    
+    def G1(self, op1_t, op2_ttau):
+        """
+        calculates G1 for two operators:
+        <op2(t1+tau) op1(t1)>
+        """
+        tau0_op = op2_ttau + " * " + op1_t
+        output_ops = [op2_ttau, tau0_op]
+        # at t1, apply op1 from left
+        op_1 = {"operator": op1_t, "applyFrom": "_left", "applyBefore":"false"}
+
+        t1 = self.t1
+        n_tau = int((self.tend)/self.dt)
+        # simulation time-axis
+        t2 = np.linspace(0, self.tend, n_tau + 1) # tau axis
+        _G1 = np.zeros([len(t1),len(t2)], dtype=complex)
+        tend = self.tend  # not always the same end time, see below
+        with tqdm.tqdm(total=len(t1), leave=None) as tq:
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                futures = []
+                for i in range(len(t1)):
+                    op_1_new = dict(op_1)
+                    op_1_new["time"] = t1[i]
+                    # t_end is always t[i]+tend, as we want to calculate G1 for tau=t[i],...,tend,
+                    # i.e., always the same length for the tau axis, as these will be fourier transformed
+                    # to get the spectrum
+                    _e = executor.submit(self.system,0,t1[i]+tend,multitime_op=[op_1_new], suffix=i, output_ops=output_ops, **self.options)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                # wait for all futures
+                wait(futures)
+            for i in range(len(futures)):
+                # futures are still 'future' objects
+                futures[i] = futures[i].result()
+            # futures now contains [t,<op2>,<op2*op1>] for every i
+            for i in range(len(t1)):
+                _G1[i,0] = futures[i][2][-(n_tau+1)]  # tau=0
+                _G1[i,1:] = futures[i][1][-n_tau:]  # tau>0
+        return t1, t2, _G1
+    
+    def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None):
+        """
+        calculates the spectrum of G1 for two operators:
+        <op2(t1+tau) op1(t1)>
+        """
+        # uses G1 to calculate the spectrum
+        if load is not None:
+            t_axis = np.load(load + "t_axis.npy")
+            tau_axis = np.load(load + "tau_axis.npy")
+            g1 = np.load(load + "g1.npy")
+        else:
+            t_axis, tau_axis, g1 = self.G1(op1_t, op2_ttau)
+        if save_g1_dir is not None and load is None:
+            np.save(save_g1_dir + "g1.npy", g1)
+            np.save(save_g1_dir + "t_axis.npy", t_axis)
+            np.save(save_g1_dir + "tau_axis.npy", tau_axis)
+        dtau = np.abs(tau_axis[1] - tau_axis[0])
+        fft_freqs = -2*np.pi * hbar * np.fft.fftfreq(2*len(tau_axis)-1,d=dtau)
+        # symmetrize g1
+        g1_symm = np.empty([len(t_axis),2*len(tau_axis)-1],dtype=complex)
+        g1_symm[:,:len(tau_axis)] = g1[:,::-1]
+        g1_symm[:,-(len(tau_axis)-1):] = np.conj(g1[:,1:])
+        spectra = np.empty([len(g1_symm),len(g1_symm[0])],dtype=complex)
+        for j in range(len(g1_symm)):
+            # do fft for every t, along the tau axis
+            spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
+        spectrum = np.real(np.trapz(spectra.transpose(),t_axis))
+        return np.fft.fftshift(fft_freqs), spectrum, spectra
 
     def G2(self, op1_t, op2_ttau, op3_ttau, op4_t):
         """
