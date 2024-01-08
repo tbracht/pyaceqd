@@ -22,6 +22,9 @@ class TwoPhotonTimebinNew(TimeBin):
         else:
             self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
 
+    def calc_timedynamics(self):
+        return self.system(0, 2*self.tb, *self.pulses, **self.options)
+
 
     def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix", verbose=False):
         """
@@ -30,24 +33,24 @@ class TwoPhotonTimebinNew(TimeBin):
         """
         density_matrix = np.zeros([4,4], dtype=complex)
         # trace
-        t,G2_EEEE,density_matrix[0,0],_,_ = self.rho_ee_ee()
+        t,G2_EEEE,density_matrix[0,0],G2_EEEE_1,G2_EEEE_2 = self.rho_ee_ee()
         _,G2_ELEL,density_matrix[1,1] = self.rho_el_el()
         _,G2_LELE,density_matrix[2,2] = self.rho_le_le()
-        _,G2_LLLL,density_matrix[3,3],_,_ = self.rho_ll_ll()
+        _,G2_LLLL,density_matrix[3,3],G2_LLLL_1,G2_LLLL_2 = self.rho_ll_ll()
         # ee_xx
-        _,G2_EEEL,density_matrix[0,1],_,_ = self.rho_ee_el()
+        _,G2_EEEL,density_matrix[0,1],G2_EEEL_1,G2_EEEL_2 = self.rho_ee_el()
         density_matrix[1,0] = np.conj(density_matrix[0,1])
-        _,G2_EELE,density_matrix[0,2],_,_ = self.rho_ee_le()
+        _,G2_EELE,density_matrix[0,2],G2_EELE_1,G2_EELE_2 = self.rho_ee_le()
         density_matrix[2,0] = np.conj(density_matrix[0,2])
-        _,G2_EELL,density_matrix[0,3],_,_ = self.rho_ee_ll()
+        _,G2_EELL,density_matrix[0,3],G2_EELL_1,G2_EELL_2 = self.rho_ee_ll()
         density_matrix[3,0] = np.conj(density_matrix[0,3])
         # el_xx
-        _,G2_ELLE,density_matrix[1,2],_,_ = self.rho_el_le()
+        _,G2_ELLE,density_matrix[1,2],G2_ELLE_1,G2_ELLE_2 = self.rho_el_le()
         density_matrix[2,1] = np.conj(density_matrix[1,2])
-        _,G2_ELLL,density_matrix[1,3],_,_ = self.rho_el_ll()
+        _,G2_ELLL,density_matrix[1,3],G2_ELLL_1,G2_ELLL_2 = self.rho_el_ll()
         density_matrix[3,1] = np.conj(density_matrix[1,3])
         # le_ll
-        _,G2_LELL,density_matrix[2,3],_,_ = self.rho_le_ll()
+        _,G2_LELL,density_matrix[2,3],G2_LELL_1,G2_LELL_2 = self.rho_le_ll()
         density_matrix[3,2] = np.conj(density_matrix[2,3])
         # normalize 
         norm = np.trace(density_matrix)
@@ -55,18 +58,19 @@ class TwoPhotonTimebinNew(TimeBin):
         if save_dm:
             np.save(filename+".npy", density_matrix)
         if save_all:
-            np.save(filename+".npy", density_matrix)
+            np.save(filename+"_dm.npy", density_matrix)
             np.save(filename+"_t.npy", t)
-            np.save(filename+"_G2_EEEE.npy", G2_EEEE)
-            np.save(filename+"_G2_ELEL.npy", G2_ELEL)
-            np.save(filename+"_G2_LELE.npy", G2_LELE)
-            np.save(filename+"_G2_LLLL.npy", G2_LLLL)
-            np.save(filename+"_G2_EEEL.npy", G2_EEEL)
-            np.save(filename+"_G2_EELE.npy", G2_EELE)
-            np.save(filename+"_G2_EELL.npy", G2_EELL)
-            np.save(filename+"_G2_ELLE.npy", G2_ELLE)
-            np.save(filename+"_G2_ELLL.npy", G2_ELLL)
-            np.save(filename+"_G2_LELL.npy", G2_LELL)
+            components = [G2_EEEE, G2_ELEL, G2_LELE, G2_LLLL, G2_EEEL, G2_EELE, G2_EELL, G2_ELLE, G2_ELLL, G2_LELL]
+            components_array = np.stack(components, axis=0)
+            np.save(filename+"_components.npy", components_array)
+
+            components_1 = [G2_EEEE_1, G2_LLLL_1, G2_EEEL_1, G2_EELE_1, G2_EELL_1, G2_ELLE_1, G2_ELLL_1, G2_LELL_1]
+            components_1_array = np.stack(components_1, axis=0)
+            np.save(filename+"_components_1.npy", components_1_array)
+    
+            components_2 = [G2_EEEE_2, G2_LLLL_2, G2_EEEL_2, G2_EELE_2, G2_EELL_2, G2_ELLE_2, G2_ELLL_2, G2_LELL_2]
+            components_2_array = np.stack(components_2, axis=0)
+            np.save(filename+"_components_2.npy", components_2_array)
         if verbose:
             # print density matrix nicely formatted
             print("density matrix:")

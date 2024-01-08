@@ -23,24 +23,24 @@ class TwoPhotonTimebin(TimeBin):
             self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
 
 
-    def calc_densitymatrix(self):
+    def calc_densitymatrix(self, save_all=False, filename="densitymatrix_old"):
         density_matrix = np.zeros([4,4], dtype=complex)
         # trace
-        _,_,density_matrix[0,0] = self.rho_ee_ee()
-        _,_,density_matrix[1,1] = self.rho_el_el()
-        _,_,density_matrix[2,2] = self.rho_le_le()
-        _,_,density_matrix[3,3] = self.rho_ll_ll()
+        t,G2_EEEE,density_matrix[0,0] = self.rho_ee_ee()
+        _,G2_ELEL,density_matrix[1,1] = self.rho_el_el()
+        _,G2_LELE,density_matrix[2,2] = self.rho_le_le()
+        _,G2_LLLL,density_matrix[3,3] = self.rho_ll_ll()
         # ee_xx
-        _,_,density_matrix[0,1] = self.rho_ee_el()
+        _,G2_EEEL,density_matrix[0,1] = self.rho_ee_el()
         density_matrix[1,0] = np.conj(density_matrix[0,1])
         density_matrix[0,2] = 0 # self.rho_ee_le()
         density_matrix[2,0] = np.conj(density_matrix[0,2])
-        _,_,density_matrix[0,3] = self.rho_ee_ll()
+        _,G2_EELL,density_matrix[0,3] = self.rho_ee_ll()
         density_matrix[3,0] = np.conj(density_matrix[0,3])
         # el_xx
         density_matrix[1,2] = 0  # self.rho_el_le()
         density_matrix[2,1] = np.conj(density_matrix[1,2])
-        _,_,density_matrix[1,3] = self.rho_el_ll()
+        _,G2_ELLL,density_matrix[1,3] = self.rho_el_ll()
         density_matrix[3,1] = np.conj(density_matrix[1,3])
         # le_ll
         density_matrix[2,3] = 0  # self.rho_le_ll()
@@ -48,6 +48,14 @@ class TwoPhotonTimebin(TimeBin):
         # normalize 
         norm = np.trace(density_matrix)
         # still output both, because the diagonal contains the number of coincidence measurments
+        if save_all:
+            np.save(filename+"_dm.npy", density_matrix)
+            np.save(filename+"_t.npy", t)
+            components = [G2_EEEE, G2_ELEL, G2_LELE, G2_LLLL, G2_EEEL, G2_EELL, G2_ELLL]
+            components_array = np.stack(components, axis=0)
+            np.save(filename+"_components.npy", components_array)
+
+        
         return concurrence(density_matrix/norm), density_matrix
 
     def prepare_operators(self, sigma_gx, sigma_xb, verbose=False):

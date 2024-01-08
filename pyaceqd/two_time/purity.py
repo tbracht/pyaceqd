@@ -5,7 +5,6 @@
 # this means that the simulation needs to span at least 2*T_pulse, i.e., 3 pulses in the pulse train
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
 from pyaceqd.tools import construct_t, simple_t_gaussian, export_csv
@@ -178,11 +177,14 @@ class Indistinguishability(Purity):
         # <x(t)>*<x(t+tau)>
         t1 = np.linspace(0, self.factor_t*self.tb, int((self.factor_t*self.tb)/self.dt) + 1)
         G0 = np.zeros([len(t1), len(t2)])
+        # the following loop can efficiently implemented using numpy
         # for i in tqdm.trange(len(t1)):
         #     for j in range(len(t2)):
         #         G0[i,j] = val[i]*val[i+j]
+        # efficient implementation
         i_indices, j_indices = np.ogrid[:len(t1), :len(t2)]
         G0 = val[i_indices] * val[i_indices + j_indices]
+        # integrate over t1
         G0_tau = np.trapz(G0, t1, axis=0)
         return t2, G0_tau
 

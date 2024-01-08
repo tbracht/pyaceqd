@@ -108,6 +108,13 @@ class PolarizatzionEntanglement():
         calculates G1 for two operators:
         <op2(t1+tau) op1(t1)>
         """
+        # check if first char of op1_t and op2_ttau is a bracket
+        if op1_t[0] != "(":
+            op1_t = "(" + op1_t + ")"
+            print("WARNING: added brackets to op1_t")
+        if op2_ttau[0] != "(":
+            op2_ttau = "(" + op2_ttau + ")"
+            print("WARNING: added brackets to op2_ttau")
         tau0_op = op2_ttau + " * " + op1_t
         output_ops = [op2_ttau, tau0_op]
         # at t1, apply op1 from left
@@ -142,13 +149,16 @@ class PolarizatzionEntanglement():
                 _G1[i,1:] = futures[i][1][-n_tau:]  # tau>0
         return t1, t2, _G1
     
+    def calc_timedynamics(self):
+        return self.system(0, self.tend, *self.pulses, **self.options)
+    
     def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None):
         """
         calculates the spectrum of G1 for two operators:
         <op2(t1+tau) op1(t1)>
         """
         # uses G1 to calculate the spectrum
-        if load is not None:
+        if load is not None and os.path.exists(load + "g1.npy"):
             t_axis = np.load(load + "t_axis.npy")
             tau_axis = np.load(load + "tau_axis.npy")
             g1 = np.load(load + "g1.npy")
@@ -161,6 +171,7 @@ class PolarizatzionEntanglement():
         dtau = np.abs(tau_axis[1] - tau_axis[0])
         fft_freqs = -2*np.pi * hbar * np.fft.fftfreq(2*len(tau_axis)-1,d=dtau)
         # symmetrize g1
+        # g1[:,-10:] = 0 + 0j
         g1_symm = np.empty([len(t_axis),2*len(tau_axis)-1],dtype=complex)
         g1_symm[:,:len(tau_axis)] = g1[:,::-1]
         g1_symm[:,-(len(tau_axis)-1):] = np.conj(g1[:,1:])
