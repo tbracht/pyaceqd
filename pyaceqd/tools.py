@@ -255,7 +255,7 @@ def read_calibration_file(calibration_file):
 
     lifetime_exciton = float(config['LIFETIMES']['exciton']) #ps
     lifetime_biexciton = float(config['LIFETIMES']['biexciton'])
-    lifetime_dark = float(config['LIFETIMES']['dark']) 
+    #lifetime_dark = float(config['LIFETIMES']['dark']) 
 
     g_ex = float(config['G_FACTORS']['g_ex'])
     g_hx = float(config['G_FACTORS']['g_hx'])
@@ -269,13 +269,13 @@ def read_calibration_file(calibration_file):
     exciton_x_energy = fss_bright/2
     exciton_y_energy = -fss_bright/2
     binding_energy = -(exciton_meV - biexciton_meV) # negatively defined
-    dark_energy = (exciton_meV - dark_meV)
+    dark_energy = (dark_meV-exciton_meV)
     dark_x_energy = dark_energy + fss_dark/2
     dark_y_energy = dark_energy - fss_dark/2 
 
     gamma_e = 1/lifetime_exciton
     gamma_b = 1/(lifetime_biexciton*2)
-    gamma_d = 1/lifetime_dark
+    #gamma_d = 1/lifetime_dark
 
-    return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
+    return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, g_ex, g_hx, g_ez, g_hz
 

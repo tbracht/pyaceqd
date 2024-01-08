@@ -6,7 +6,9 @@ from pyaceqd.tools import export_csv
 from scipy.io import savemat, loadmat
 from scipy import integrate
 from scipy import interpolate
+from scipy.signal import savgol_filter
 import configparser 
+import pickle
 
 hbar = 0.6582173  # meV*ps
 
@@ -30,6 +32,8 @@ class PulseGenerator:
         self.time = np.arange(t0,tend,dt)
         self.frequencies = -np.fft.fftshift(np.fft.fftfreq(len(self.time),d=dt))
         self.energies = 2*np.pi*hbar*self.frequencies
+        central_f_nm = 299792.458/self.central_wavelength
+        self.wavelengths = 299792.458/(central_f_nm + self.frequencies)
 
         self.temporal_representation_x = np.zeros_like(self.time, dtype=complex)
         self.temporal_representation_y = np.zeros_like(self.time, dtype=complex)
@@ -40,6 +44,10 @@ class PulseGenerator:
         self.frequency_filter_y = np.zeros_like(self.time, dtype=complex)
         self.temporal_filter_x = np.zeros_like(self.time, dtype=complex)
         self.temporal_filter_y = np.zeros_like(self.time, dtype=complex)
+
+        
+
+        self.pulse_power = 0
         
     def _read_calibration_file(self,calibration_file):
         config = configparser.ConfigParser()
@@ -120,11 +128,11 @@ class PulseGenerator:
         self._add_spectral(pulse_x,pulse_y)
         pass
 
-    def add_rectangle_frequ(self,central_f, width_f, hight,phase_taylor=[], polar_x = 1,shift_time = None, unit = 'Hz'):
+    def add_rectangle_frequ(self,central_f, width_f, hight,phase_taylor=[], polarisation = [1,0],shift_time = None, unit = 'Hz'):
         # sqare pulse in Fourier space 
         central_f = self._Units(central_f,unit)
         width_f = np.abs(self._Units(width_f,unit))
-        polar_y = np.sqrt(1-polar_x**2)
+        polar_x,polar_y = self._normalise_polarisation(polarisation)
 
         pulse = np.zeros_like(self.frequencies,dtype=complex)
         pulse[np.abs(self.frequencies-central_f)<=width_f/2] = hight
@@ -134,6 +142,77 @@ class PulseGenerator:
         pulse_y = pulse*polar_y
         self._add_spectral(pulse_x,pulse_y)
         pass
+    
+    def add_polynom_frequ(self,central_f, poly_f = [], phase_taylor=[],shift_time = 0, polarisation = [1,0], unit = 'Hz'):
+        # polynom pulse in Fourier space 
+        poly_f = np.flip(np.array(poly_f))
+
+        if unit.lower()[0] == 'h':
+            pulse = np.polyval(poly_f,self.frequencies-central_f).astype(complex)
+        elif unit.lower()[0] == 'm':
+            pulse = np.polyval(poly_f,self.energies-central_f).astype(complex)
+        elif unit.lower()[0] == 'n':
+            pulse = np.polyval(poly_f,self.wavelengths-central_f).astype(complex)
+
+        central_f = self._Units(central_f,unit)
+        polar_x,polar_y = self._normalise_polarisation(polarisation)
+        pulse *= np.exp(1j*self._Taylor(self.frequencies*2*np.pi,central_f*2*np.pi,coefficients=phase_taylor))
+        pulse *= np.exp(1j*2*np.pi*self.frequencies*shift_time)
+        pulse_x = pulse*polar_x
+        pulse_y = pulse*polar_y
+        self._add_spectral(pulse_x,pulse_y)
+        pass 
+    
+    def add_spectrum_frequ(self,sample_frequ, sample_spectrum, smoothing_level = 0, central_f = 0, phase_taylor=[],shift_time = None, polarisation = [1,0], unit = 'nm',signal_threshhold = 0, power = 1, plot = True, intensity = True):
+        if unit.lower()[0] != 'n':
+            print('currently only nm supported')
+            return
+
+        if shift_time is None:
+            shift_time = self.tend/2
+
+        central_f = self._Units(central_f,unit)
+
+        sample_filter1 = np.array(sample_spectrum)
+        sample_filter1[sample_filter1 < signal_threshhold] = signal_threshhold
+        sample_filter1 = sample_filter1-signal_threshhold
+
+        if smoothing_level > 0:
+            smooth_window = int(len(sample_frequ)*smoothing_level*0.2)
+            sample_filter1 = savgol_filter(sample_filter1,smooth_window,3)
+        
+        sample_filter1[sample_filter1 < 0] = 0
+        # interpolating on pulse object 
+        interpolate_fkt = interpolate.interp1d(sample_frequ,sample_filter1,kind='cubic',fill_value=(sample_filter1[0],sample_filter1[-1]),bounds_error=False) 
+        if unit.lower()[0] == 'n':
+            interpolate_spectrum = interpolate_fkt(self.wavelengths)
+        
+        if intensity:
+            pulse = np.sqrt(np.array(interpolate_spectrum).astype(complex))
+        else:
+            pulse = np.array(interpolate_spectrum).astype(complex)
+        pulse *= np.exp(1j*self._Taylor(self.frequencies*2*np.pi,central_f*2*np.pi,coefficients=phase_taylor))
+        pulse *= np.exp(1j*2*np.pi*self.frequencies*shift_time)
+        polar_x,polar_y = self._normalise_polarisation(polarisation)
+        pulse_x = pulse*polar_x
+        pulse_y = pulse*polar_y
+        self._add_spectral(pulse_x,pulse_y)
+        
+        self.add_filter_rectangle(cap_transmission=False,transmission=np.sqrt(power/self.pulse_power))
+        self.apply_frequency_filter()
+        if plot:
+            plt.figure()
+            plt.plot(sample_frequ,sample_spectrum-signal_threshhold,'k-', label='original')
+            plt.plot(self.wavelengths,interpolate_spectrum,'r-', label='interpolated')
+            plt.xlim([np.min(sample_frequ),np.max(sample_frequ)])
+            plt.xlabel(unit)
+            plt.legend()
+            plt.show()
+
+
+
+
+        pass
 
     def _add_time(self, pulse_x_time, pulse_y_time):
         # internal function to add pulses defined in time
@@ -142,6 +221,8 @@ class PulseGenerator:
 
         self.frequency_representation_x += np.fft.fftshift(np.fft.fft(pulse_x_time))
         self.frequency_representation_y += np.fft.fftshift(np.fft.fft(pulse_y_time))
+        
+        self._update_pulse_power()
         pass
 
     def _add_spectral(self, pulse_x_freq, pulse_y_freq):
@@ -151,14 +232,20 @@ class PulseGenerator:
 
         self.temporal_representation_x += np.fft.ifft(np.fft.ifftshift(pulse_x_freq))
         self.temporal_representation_y += np.fft.ifft(np.fft.ifftshift(pulse_y_freq))
+
+        self._update_pulse_power()
         pass
+
+    def _update_pulse_power(self):
+        self.pulse_power = np.trapz(y=np.abs(self.temporal_representation_x)**2 + np.abs(self.temporal_representation_y)**2, x=np.real(self.time))
 
     ### Filter functions
         # Filters that can be applied to Fourier space
         # filters have a transmission that can be invertet (1- transmission) bu setting invert = True
         # different merging techniques can be used merging = 'x' x: + -> adding filters; * -> multiplying filters; m -> Overlaying filters
         # Filters can be applied to either('x' or 'y') or both ('b') pulse polarisations 
-    def add_filter_rectangle(self, central_f = None, width_f = None, transmission = 1 ,polarisation = 'b', invert = False,merging = '+', unit = 'Hz'):
+    def add_filter_rectangle(self, central_f = None, width_f = None, transmission = 1 ,
+                             cap_transmission = True, polarisation = 'b', invert = False,merging = '+', unit = 'Hz'):
         # Square filter
         if central_f is None:
             filter = np.ones_like(self.frequencies,dtype=complex)*transmission
@@ -172,7 +259,7 @@ class PulseGenerator:
             if invert:
                 filter = (1-filter)
 
-        self._add_filter(filter,polarisation,merging=merging)
+        self._add_filter(filter,polarisation,merging=merging, cap_transmission = cap_transmission)
         pass
 
     def add_filter_gaussian(self, central_f, width_f, transmission = 1 ,super_gauss = 1,polarisation = 'b',field_int = 'field',sig_fwhm = 'sig', invert = False,merging = '+',unit = 'Hz',phase = False):
@@ -288,9 +375,10 @@ class PulseGenerator:
         if pol.lower()[0] == 'b' or pol.lower()[0] == 'y' and np.any(self.frequency_representation_y != 0):
             self.frequency_representation_y *= self.frequency_filter_y
             self.temporal_representation_y = np.fft.ifft(np.fft.ifftshift(self.frequency_representation_y))
-        pass
 
-    def _add_filter(self,filter,pol='both',merging = '+'):
+        self._update_pulse_power()
+
+    def _add_filter(self,filter,pol='both',merging = '+', cap_transmission = True):
         # internal function for constructiong filters
         if pol.lower()[0] == 'b' or pol.lower()[0] == 'x':
             if merging == '+':
@@ -308,10 +396,12 @@ class PulseGenerator:
             elif merging.lower()[0] == 'm': 
                 for i, value in enumerate(self.frequency_filter_y):
                     self.frequency_filter_y[i] = np.max([value,filter[i]])
-        if np.any(np.logical_or(np.abs(self.frequency_filter_x) > 1, np.abs(self.frequency_filter_y) > 1)): 
-            print('WARNING: Transmission in filter > 1. Capped to 1.')
-            self.frequency_filter_x[self.frequency_filter_x > 1] = 1 
-            self.frequency_filter_y[self.frequency_filter_y > 1] = 1 
+
+        if cap_transmission:
+            if np.any(np.logical_or(np.abs(self.frequency_filter_x) > 1, np.abs(self.frequency_filter_y) > 1)): 
+                #print('WARNING: Transmission in filter > 1. Capped to 1.')
+                self.frequency_filter_x[self.frequency_filter_x > 1] = 1 
+                self.frequency_filter_y[self.frequency_filter_y > 1] = 1 
    
     
     ### Devices from the lab 
@@ -792,6 +882,16 @@ class PulseGenerator:
 
         return phase_file_x, phase_file_y
 
+    def generate_field_functions(self):
+        #generate a function that can be used by qutip (ect) and interpolates accordingly 
+        def field_function_x(t):
+            field_x = interpolate.interp1d(self.time, self.temporal_representation_x, kind='linear', fill_value=0,bounds_error=False)
+            return field_x(t)
+        def field_function_y(t):
+            field_y = interpolate.interp1d(self.time, self.temporal_representation_y, kind='linear', fill_value=0,bounds_error=False)
+            return field_y(t)
+    
+        return field_function_x, field_function_y 
 
     #merging with other pulses
     def merge_pulses(self,other_pulse):
@@ -817,7 +917,7 @@ class PulseGenerator:
         
             
     
-    ### clear functions
+    ### clear & save functions
     def clear_all(self):
         self.clear_filter()
         self.clear_pulses()
@@ -833,3 +933,18 @@ class PulseGenerator:
         self.temporal_representation_y = np.zeros_like(self.time, dtype=complex)
         self.frequency_representation_x = np.zeros_like(self.time, dtype=complex)
         self.frequency_representation_y = np.zeros_like(self.time, dtype=complex)
+
+    def save_pulse(self,save_name = 'pulse',save_dir = '',suffix = ''):
+        save_str = save_dir + save_name + str(suffix) + '.pulse'
+        with open(save_str, "wb") as f:
+            pickle.dump(self, f)
+        return save_str
+
+# loading a pulse from a file
+def load_pulse(file_name):
+    if file_name[-6:] != '.pulse':
+        print('ERROR: File is not supported!')
+        return
+    with open(file_name, "rb") as f:
+        pulse = pickle.load(f)
+    return pulse
