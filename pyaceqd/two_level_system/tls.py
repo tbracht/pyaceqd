@@ -13,10 +13,11 @@ import pyaceqd.constants as constants
 hbar = constants.hbar  # meV*ps
 
 def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, **options):
+         multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
+             J_to_file=False, J_file=None, factor_ah=None, **options):
     system_prefix = "tls"
     system_op = None
-    boson_op = "1*|1><1|_2"
+    boson_op = "{:.3f}*|1><1|_2".format(phonon_factor)
     initial = "|0><0|_2"
     lindblad_ops = []
     if lindblad:
@@ -27,12 +28,14 @@ def tls_(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10
     rf_op = None
     if rf:
         rf_op = "|1><1|_2"
+    if pulse_file is None and pulse_file_x is not None:
+        pulse_file = pulse_file_x
     # multitime: for ex. ["|1><0|_2",0,"left"] applies |1><0|_2 at t=0 from the left
     # invoke_dict = {"dt": dt, "phonons": phonons, "generate_pt": generate_pt, "t_mem": t_mem, "ae": ae, "temperature": temperature}
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
-                  firstonly=firstonly)
+                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah)
     return result
 
 def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, visible_states=None, **options):
@@ -79,7 +82,7 @@ def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False
     return result
 
 def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, cav_coupl2=None, cav_loss2=None, delta_cx2=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, n_phot1=2, n_phot2=2, pulse_file=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None):
+         multitime_op=None, n_phot1=2, n_phot2=2, laser_cav_coupl=None, pulse_file=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None):
     n1 = n_phot1 + 1
     n2 = n_phot2 + 1
     system_prefix = "tls_cavity"
@@ -94,6 +97,8 @@ def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06,
         lindblad_ops = [["|0><1|_2 otimes Id_{} otimes Id_{}".format(n1,n2), gamma_e]]
     # note that the TLS uses x-polar
     interaction_ops = [["|1><0|_2 otimes Id_{} otimes Id_{}".format(n1,n2),"x"]]
+    if laser_cav_coupl is not None:
+        interaction_ops.append(["{}*(Id_2 otimes bdagger_{} otimes Id_{})".format(laser_cav_coupl,n1,n2),"x"])
     # rotating frame of pulse
     rf_op = None
     if rf:

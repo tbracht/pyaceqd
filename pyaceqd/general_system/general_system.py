@@ -112,7 +112,8 @@ def read_result_1d(data):
 
 def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7, \
-                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False):
+                  system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False, \
+                  J_to_file=False, J_file=None, factor_ah=None):
     """
     ACE_stream: separate calculation for the process tensor, which can be used to simulate way longer time scales.
     """
@@ -129,6 +130,8 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             check_multitime(multitime_op=_mto,verbose=verbose)
     if pt_file is None:
         pt_file = "{}_{}nm_{}k_th{}_tmem{}_dt{}.ptr".format(system_prefix,ae,temperature,threshold,t_mem,dt)
+        if J_file is not None:
+            pt_file = "{}_{}_{}k_th{}_tmem{}_dt{}.ptr".format(system_prefix,os.path.splitext(J_file)[0],temperature,threshold,t_mem,dt)
     if phonons:
         if verbose and os.path.exists(pt_file+"_initial"):
             print("using pt_file " + pt_file)
@@ -149,10 +152,18 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
                 f.write("Gaussian_precalc_FFT  true\n")
                 f.write("use_Gaussian_repeat true\n")
                 f.write("Boson_subtract_polaron_shift true\n")
+                f.write("Boson_E_min {}\n".format(0))
                 f.write("Boson_E_max {}\n".format(boson_e_max))
-                f.write("Boson_SysOp    {{ {} }}\n".format(boson_op))
-                f.write("Boson_J_type         QDPhonon\n")
-                f.write("Boson_J_a_e    {}\n".format(ae))
+                if J_file is not None:
+                    f.write("Boson_J_from_file {}\n".format(J_file))
+                else:
+                    f.write("Boson_SysOp    {{ {} }}\n".format(boson_op))
+                    f.write("Boson_J_type         QDPhonon\n")
+                    f.write("Boson_J_a_e    {}\n".format(ae))
+                    if factor_ah is not None:
+                        f.write("Boson_J_a_h    {}\n".format(ae/factor_ah))
+                if J_to_file:
+                    f.write("Boson_J_print {} 0 15 2000\n".format("J_omega.dat"))
                 f.write("temperature    {}\n".format(temperature))
                 f.write("dont_propagate        true\n")
                 f.write("write_PT {}\n".format(pt_file))
