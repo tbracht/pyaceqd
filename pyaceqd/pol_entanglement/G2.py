@@ -149,8 +149,11 @@ class PolarizatzionEntanglement():
                 _G1[i,1:] = futures[i][1][-n_tau:]  # tau>0
         return t1, t2, _G1
     
-    def calc_timedynamics(self):
-        return self.system(0, self.tend, *self.pulses, **self.options)
+    def calc_timedynamics(self, output_ops=None):
+        new_options = dict(self.options)
+        if output_ops is not None:
+            new_options["output_ops"] = output_ops
+        return self.system(0, self.tend, *self.pulses, **new_options)
     
     def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None):
         """
