@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from pyaceqd.tools import construct_t, simple_t_gaussian, export_csv
 from pyaceqd.timebin.timebin import TimeBin
 from pyaceqd.pulses import PulseTrain, ChirpedPulse
-from pyaceqd.two_level_system.tls import tls_
+from pyaceqd.two_level_system.tls import tls
 import matplotlib.pyplot as plt
 
 class Purity(TimeBin):
@@ -19,8 +19,8 @@ class Purity(TimeBin):
         self.factor_t = factor_t
         self.factor_tau = factor_tau
         super().__init__(system, pulse, dt=dt, tb=tb, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, t_simul=t_simul, options=options)
-        self.sigma_x = sigma_x
-        self.sigma_xdag = sigma_xdag
+        self.sigma_x = "(" + sigma_x + ")"
+        self.sigma_xdag = "(" + sigma_xdag + ")"
         
         try:
             self.gamma_e = options["gamma_e"]
@@ -43,7 +43,8 @@ class Purity(TimeBin):
             t_axis_complete = np.concatenate((t_axis_complete, self.t1 + i*self.tb))
         self.t_axis_complete = t_axis_complete
         # compatibility with tls, which needs no polarization
-        self.options["pulse_file"] = self.pulse_file_x
+        self.options["pulse_file_x"] = self.pulse_file_x
+        self.options["pulse_file_y"] = self.pulse_file_y
         # print(self.options)
 
     def prepare_pulsefile(self, verbose=False, t_simul=None, plot=False):
@@ -68,6 +69,12 @@ class Purity(TimeBin):
             plt.ylabel("E_x")
             plt.savefig("pulsetrain.png")
             plt.clf()
+
+    def calc_timedynamics(self, output_ops=None):
+        new_options = dict(self.options)
+        if output_ops is not None:
+            new_options["output_ops"] = output_ops
+        return self.system(0, self.tb, *self.pulses, **new_options)
 
     def G2(self):
         sigma_left = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
@@ -197,19 +204,19 @@ class Indistinguishability(Purity):
         n_1 = int(0.5*tb/dt)
         G11 = 2*np.trapz(g1[:n_1], t[:n_1])
         G12 = np.trapz(g1[n_1:3*n_1], t[n_1:3*n_1])
-        print("G11", G11, "G12", G12)
+        # print("G11", G11, "G12", G12)
 
         t2,g2 = self.G2()
         G21 = 2*np.trapz(g2[:n_1], t2[:n_1])
         G22 = np.trapz(g2[n_1:3*n_1], t2[n_1:3*n_1])
-        print("G21", G21, "G22", G22)
+        # print("G21", G21, "G22", G22)
 
         t0,g0 = self.simple_propagation()
         # special, integrate 0,...,tb and tb,...,2tb
         # n_2 = int(tb/dt)
         G01 = 2*np.trapz(g0[:n_1], t0[:n_1])
         G02 = np.trapz(g0[n_1:3*n_1], t0[n_1:3*n_1])
-        print("G01", G01, "G02", G02)
+        # print("G01", G01, "G02", G02)
 
         result = (G01-G11+G21)/(G02-G12+G22)
         return 1 - result
