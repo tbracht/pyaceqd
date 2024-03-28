@@ -4,12 +4,12 @@ from pyaceqd.tools import export_csv, construct_t
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
-from pyaceqd.two_level_system.tls import tls_
+from pyaceqd.two_level_system.tls import tls
 from pyaceqd.pulses import ChirpedPulse
 
 HBAR = 0.6582119514  # meV ps
 
-def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4):
+def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **ops):
     # pulse file generation
     _t_pulse = np.arange(t0,tend+tauend,step=dtau)
     pulse_file = temp_dir + "tls_G1_pulse.dat"
@@ -22,12 +22,14 @@ def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3
                                           # second: Tr(sigma^dagger * rho) =  <|x><g|> = pxg
     options = {"gamma_e": gamma_e, "phonons": phonons, "ae": ae, "temperature": temperature, "lindblad": True, "pt_file": pt_file, "temp_dir": temp_dir,
                "pulse_file": pulse_file, "output_ops": output_ops}
+    # include ops in options
+    options.update(ops)
     multitime_op = {"operator": "|0><1|_2","applyFrom": "_left", "applyBefore": "false"}
-    t, tau, g1 = G1_general(t0,tend,tau0,tauend,dt,dtau,*pulses,system=tls_,multitime_op=multitime_op,coarse_t=coarse_t,workers=workers,prepare_only=prepare_only,simple_exp=simple_exp,gaussian_t=gaussian_t,factor_tau=factor_tau,**options)
+    t, tau, g1 = G1_general(t0,tend,tau0,tauend,dt,dtau,*pulses,system=tls,multitime_op=multitime_op,coarse_t=coarse_t,workers=workers,prepare_only=prepare_only,simple_exp=simple_exp,gaussian_t=gaussian_t,factor_tau=factor_tau,**options)
     os.remove(pulse_file)
     return t, tau, g1
 
-def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls_, multitime_op={"operator": "|0><1|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **options):
+def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls, multitime_op={"operator": "|0><1|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **options):
     # includes tend
     t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     n_tau = int((tauend-tau0)/dtau)
@@ -107,7 +109,7 @@ def pulsed_mollow_tls_pulses(pulse, areas, tend=500, tauend=500, dt=0.2, dtau=0.
             np.save(save_dir+"z"+_name,spectrums)
     return np.fft.fftshift(fft_freqs), areas, spectrums
 
-def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False):
+def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False, **ops):
     n_tau = int((tauend)/dtau)
     tau_axis = np.linspace(0, tauend, n_tau + 1)
     spectrums = np.zeros([len(areas),2*len(tau_axis)-1])
@@ -115,7 +117,7 @@ def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2
     for i in tqdm.trange(len(areas),leave=None):
         # print("{}/{}".format(i+1,len(areas)))
         p1 = ChirpedPulse(tau_0=pulse_tau, e_start=detuning, alpha=0, e0=areas[i], t0=pulse_tau*4)
-        t_axis, tau_axis, g1 = G1_twols(0,tend,0,tauend,dt,dtau,p1,ae=ae,gamma_e=gamma_e,coarse_t=True,phonons=phonons, workers=workers, temperature=temperature, pt_file=pt_file, temp_dir=temp_dir, prepare_only=prepare_only, simple_exp=simple_exp, gaussian_t=gaussian_t)
+        t_axis, tau_axis, g1 = G1_twols(0,tend,0,tauend,dt,dtau,p1,ae=ae,gamma_e=gamma_e,coarse_t=True,phonons=phonons, workers=workers, temperature=temperature, pt_file=pt_file, temp_dir=temp_dir, prepare_only=prepare_only, simple_exp=simple_exp, gaussian_t=gaussian_t,**ops)
         # plt.pcolormesh(t_axis,tau_axis,np.real(g1.transpose()),shading='auto')
         # plt.xlabel("t in ps")
         # plt.ylabel("tau in ps")
@@ -181,7 +183,7 @@ def simple_vhom(tend=600, tauend=600, dt=0.1, dtau=0.02, *pulses, ae=3.0, temper
     output_ops = ["|1><1|_2"]
     options = {"gamma_e": gamma_e, "phonons": phonons, "ae": ae, "temperature": temperature, "lindblad": True, "pt_file": pt_file, "temp_dir": temp_dir,
                "stream": True, "output_ops": output_ops}
-    t,x = tls_(0,tend,*pulses,dt=dtau,**options)
+    t,x = tls(0,tend,*pulses,dt=dtau,**options)
     brightness = np.trapz(x,t)  # not 'normalized' with gamma_e
     t, tau, g1_t_tau = G1_twols(0,tend,0,tauend,dt,dtau,*pulses,ae=ae,temperature=temperature,gamma_e=gamma_e,
                           phonons=phonons,pt_file=pt_file,workers=workers,temp_dir=temp_dir,coarse_t=coarse_t,prepare_only=prepare_only) 
