@@ -3,6 +3,7 @@ import os
 import subprocess
 from pyaceqd.tools import export_csv
 import pyaceqd.constants as constants
+import time
 
 hbar = constants.hbar  # meV*ps
 
@@ -36,7 +37,7 @@ def check_multitime(multitime_op,verbose):
         #if multitime_op["applyFrom"] is "_left" or multitime_op["applyFrom"] is "_right":
         #    multitime_op["applyFrom"] = "_"+multitime_op["applyFrom"]
         # catch illegal options
-        if multitime_op["applyFrom"] is not "_left" and multitime_op["applyFrom"] is not "_right" and multitime_op["applyFrom"] is not "":
+        if multitime_op["applyFrom"] != "_left" and multitime_op["applyFrom"] != "_right" and multitime_op["applyFrom"] != "":
             print(multitime_op)
             print('give "_left" or "_right" or "" for multitime')
             exit(0)
@@ -133,10 +134,10 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
         if J_file is not None:
             pt_file = "{}_{}_{}k_th{}_tmem{}_dt{}.ptr".format(system_prefix,os.path.splitext(J_file)[0],temperature,threshold,t_mem,dt)
     if phonons:
-        if verbose and os.path.exists(pt_file+"_initial"):
+        if verbose and os.path.exists(pt_file+"_initial") and J_to_file is None:
             print("using pt_file " + pt_file)
         # try to detect pt_file, else calculate it
-        if not os.path.exists(pt_file+"_initial"):
+        if not os.path.exists(pt_file+"_initial") or J_to_file is not None:
             print("{} not found. Calculating...".format(pt_file))
             verbose = True
             generate_file = temp_dir + "{}_generate_{}.param".format(system_prefix, suffix)  # parameter file
@@ -163,15 +164,27 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
                     if factor_ah is not None:
                         f.write("Boson_J_a_h    {}\n".format(ae/factor_ah))
                 if J_to_file:
-                    f.write("Boson_J_print {} 0 15 2000\n".format("J_omega.dat"))
+                    f.write("Boson_J_print {} 0 15 2000\n".format(J_to_file))
                 f.write("temperature    {}\n".format(temperature))
                 f.write("dont_propagate        true\n")
                 f.write("write_PT {}\n".format(pt_file))
             if not prepare_only:
                 subprocess.check_call(["ACE",generate_file])
                 os.remove(generate_file)
+                full_names = [pt_file+"_initial",pt_file+"_initial_0", pt_file+"_repeated", pt_file+"_repeated_0"]
+                # make read-only
+                for name in full_names:
+                    subprocess.run(["chmod", "444", name])
+                time.sleep(1)
             if prepare_only:
                 print("wrote {}".format(generate_file))
+                # just write J to file, exit ACE after one second.
+                # kind of hacky to be honest
+                if J_to_file:
+                    print("write J(omega) to {}".format(J_to_file))
+                    _process = subprocess.Popen(["ACE",generate_file],stdout=subprocess.DEVNULL)
+                    time.sleep(1)
+                    _process.terminate()
             try:
                 os.remove("ACE.out")
             except FileNotFoundError:
