@@ -12,7 +12,7 @@ from pyaceqd.constants import hbar
 import pyaceqd.pulsegenerator as pg
 
 class RabiRotations():
-    def __init__(self, dt=0.1, tau=5, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1) -> None:
+    def __init__(self, dt=0.1, tau=5, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1, t_mem=10) -> None:
         self.dt = dt
         self.tau = tau
         self.areas = np.linspace(0, area_max, n_area)
@@ -23,12 +23,13 @@ class RabiRotations():
         self.ah_ratio = ah_ratio
         self.J_from_file = J_from_file
         self.phonon_factor = phonon_factor
+        self.t_mem=t_mem
         if J_from_file is not None:
             self.pt_name = J_from_file.split(".")[0]+".ptr"
         else:
-            self.pt_name = "pt_T{:.1f}K_AE{:.1f}_AHratio{:.2f}_coupl{:.1f}.ptr".format(self.temperature,self.ae,self.ah_ratio,self.phonon_factor)
+            self.pt_name = "pt_T{:.1f}K_AE{:.1f}_AHratio{:.2f}_coupl{:.1f}_dt{:.2f}_tmem{:.1f}.ptr".format(self.temperature,self.ae,self.ah_ratio,self.phonon_factor,self.dt,self.t_mem)
         self.full_names = [self.pt_name+"_initial",self.pt_name+"_initial_0", self.pt_name+"_repeated", self.pt_name+"_repeated_0"]
-        self.options = dict({"gamma_e": self.gamma_e,"dt": self.dt,"phonons": self.phonons, "temp_dir": "/mnt/temp_data/", "pt_file": self.pt_name})
+        self.options = dict({"gamma_e": self.gamma_e,"dt": self.dt,"phonons": self.phonons, "temp_dir": "/mnt/temp_data/", "pt_file": self.pt_name})  # "factor_ah": ah_ratio, "ae": self.ae,
         if os.path.exists(self.full_names[0]):
             print("Warning: pt files already exist")
 
@@ -67,14 +68,48 @@ class RabiRotations():
         """
         # some pulse, doesnt really matter
         p1 = ChirpedPulse(tau_0=self.tau, e_start=0, alpha=0, e0=1, polar_x=1.0, t0=4*self.tau)
-        tls(0,8*self.tau,p1,dt=0.1 , lindblad=False, phonons=True, factor_ah=self.ah_ratio, ae=self.ae,temperature=self.temperature,prepare_only=False, phonon_factor=self.phonon_factor, pt_file=self.pt_name, J_file=self.J_from_file)
+        tls(0,8*self.tau,p1,dt=self.dt ,t_mem=self.t_mem, lindblad=False, phonons=True, factor_ah=self.ah_ratio, ae=self.ae,temperature=self.temperature,prepare_only=False, phonon_factor=self.phonon_factor, pt_file=self.pt_name, J_file=self.J_from_file)
         # change permission of pt files to read-only
         for name in self.full_names:
             subprocess.run(["chmod", "444", name])
         time.sleep(1)
         return
+
+    def calc_timedynamics(self, tau, area, path="", plot_pulse=False, detuning=0, tend=None, plot=False, lindblad=True, carve_pulse=False, pulse_args={"width_t": 4, "central_f": 0}, filter_width=0.14):
+        """
+        calculates the time dynamics for a given pulse area and tau
+        """
+        p1 = ChirpedPulse(tau_0=tau, e_start=detuning, alpha=0, e0=area, polar_x=1.0, t0=4*tau)
+        if tend is None:
+            tend = np.round(10/self.gamma_e)+100
+
+        # first generate process tensors
+        if self.phonons and not os.path.exists(self.pt_name+"_initial"):
+            self.generate_pt()
+        # time from 0 to 10/gamma_e to catch the whole decay process
+        if carve_pulse:
+            pulse = pg.PulseGenerator(0,np.round(10/self.gamma_e),0.02)
+            pulse.add_gaussian_time(t0=100, sig_or_fwhm='fwhm', field_or_intesity='int',area_time=area,**pulse_args)
+            pulse.add_filter_double_erf(central_f=0,width_f=filter_width,rise_f=0.01)
+            pulse.apply_frequency_filter()
+            pulse_file, _ = pulse.generate_pulsefiles(suffix="timedynamics",temp_dir=self.options["temp_dir"])
+            t,g,x,pgx,pxg = tls(0,tend,p1,lindblad=lindblad, pulse_file=pulse_file, **self.options)
+            if plot_pulse:
+                pulse.plot_pulses(t_0=100,t_end=400,frequ_0=-0.5,frequ_end=0.5,save_name=path+"pulse_{:.2f}ps_{:.2f}pi".format(tau,area),save=True)
+        else: 
+            t,g,x,pgx,pxg = tls(0,tend,p1,lindblad=lindblad, **self.options)
+        if plot:
+            plt.clf()
+            plt.plot(t.real,np.real(x),label="x")
+            plt.plot(t.real,np.abs(pgx),label="|p_gx|")
+            plt.xlabel("time (ps)")
+            plt.ylabel("population")
+            plt.legend()
+            plt.savefig(path+"timedynamics_{:.2f}ps_{:.2f}pi.png".format(tau,area))
+            plt.clf()
+        return t.real,g,x,pgx,pxg
     
-    def get_rabi_rotations(self, integrate=True, plot=False, delete_pt=True, path="", workers=15, carve_pulse=False, pulse_args={"width_t": 4, "central_f": 0}, filter_width=0.14):
+    def get_rabi_rotations(self,detuning=0, integrate=True, plot=False, delete_pt=True, path="", workers=15, carve_pulse=False, pulse_args={"width_t": 4, "central_f": 0}, filter_width=0.14, exp_data=None, plot_dynamic=False):
         """
         returns the rabi rotations for the given parameters
         integrate: if True, the rabi rotations are calculated by integrating the population of the excited state over time
@@ -86,10 +121,17 @@ class RabiRotations():
             filename += "carve_{:.1f}ps_{:.1f}nm_".format(pulse_args["width_t"],filter_width)
         filename += "rabi_{:.1f}K_tau_{:.1f}ps_ae_{:.1f}_ah_{:.2f}_coupl_{:.1f}".format(self.temperature,self.tau,self.ae,self.ah_ratio,self.phonon_factor)
 
-        def plot_data(areas, results):
+        def plot_data(areas, results, exp_data=None):
             # plotting of the results, is used with data that is already present or calculated
             plt.clf()
             plt.plot(areas, results)
+            if exp_data is not None:
+                exp_x = exp_data[0]
+                exp_y = exp_data[1]
+                exp_offset = exp_data[2]
+                exp_y = np.max(results)*exp_y/np.max(exp_y) + exp_offset
+                plt.plot(exp_x,exp_y,label="Experiment")
+                plt.legend()
             plt.xlabel("pulse area / pi")
             plt.ylabel("Counts")
             if self.phonons:
@@ -97,7 +139,7 @@ class RabiRotations():
                 plt.savefig(filename+".png")
             else:
                 plt.title("tau={:.1f}ps".format(self.tau))
-                plt.savefig("rabi.png")
+                plt.savefig(path+"rabi.png")
         
         # check if data already exists
         if os.path.exists(filename+".csv"):
@@ -105,7 +147,7 @@ class RabiRotations():
             areas = data[:,0]
             results = data[:,1]
             if plot:
-                plot_data(areas, results)
+                plot_data(areas, results, exp_data=exp_data)
             return areas, results
         
         # first generate process tensors
@@ -116,10 +158,10 @@ class RabiRotations():
         futures = []
         pulse_file = None
         pulse_files = []
-        with tqdm.tqdm(total=len(self.areas)) as pbar:
+        with tqdm.tqdm(total=len(self.areas),leave=None) as pbar:
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 for i in range(len(self.areas)):
-                    p1 = ChirpedPulse(tau_0=self.tau, e_start=0, alpha=0, e0=self.areas[i], polar_x=1.0, t0=4*self.tau)
+                    p1 = ChirpedPulse(tau_0=self.tau, e_start=detuning, alpha=0, e0=self.areas[i], polar_x=1.0, t0=4*self.tau)
                     if integrate:
                         # time from 0 to 10/gamma_e to catch the whole decay process
                         if carve_pulse:
@@ -131,7 +173,9 @@ class RabiRotations():
                             pulse_files.append(pulse_file)
                             # pulse area changes after filtering
                             self.areas[i] = np.sqrt(pulse.pulse_power) # square root of power that is left after filtering
-                        _e = executor.submit(tls,0,np.round(10/self.gamma_e),p1,lindblad=True, suffix=i, pulse_file=pulse_file, **self.options)
+                            if plot_dynamic:
+                                pulse.plot_pulses(t_0=0,t_end=400,frequ_0=-0.5,frequ_end=0.5,save_name=path+"pulse_{:.2f}ps_{:.2f}pi".format(self.tau,self.areas[i]),save=True)
+                        _e = executor.submit(tls,0,np.round(10/self.gamma_e)+100,p1,lindblad=True, suffix=i, pulse_file=pulse_file, **self.options)
                     else: 
                         # use last time step as result otherwise
                         _e = executor.submit(tls,0,8*self.tau,p1,lindblad=False, suffix=i, pulse_file=pulse_file, **self.options)
@@ -143,6 +187,14 @@ class RabiRotations():
                     os.remove(file)
         for i in range(len(self.areas)):
             t,g,x,pgx,pxg = futures[i].result()
+            if plot_dynamic:
+                plt.clf()
+                plt.xlim(0,200)
+                plt.plot(t.real,np.real(x),label="x")
+                plt.xlabel("time (ps)")
+                plt.ylabel("population")
+                plt.legend()
+                plt.savefig(path+"timedynamics_{:.2f}ps_{:.2f}pi.png".format(self.tau,self.areas[i]))
             if integrate:
                 results[i] = self.gamma_e*np.trapz(np.real(x),np.real(t))
             else:
@@ -152,7 +204,7 @@ class RabiRotations():
         else:
             export_csv("rabi.csv", self.areas, results)
         if plot:
-            plot_data(self.areas, results)
+            plot_data(self.areas, results, exp_data=exp_data)
         if delete_pt:
             self.delete_pt_files()
         return self.areas, results

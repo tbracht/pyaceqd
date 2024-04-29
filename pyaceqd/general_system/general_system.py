@@ -114,7 +114,7 @@ def read_result_1d(data):
 def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7, \
                   system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False, \
-                  J_to_file=False, J_file=None, factor_ah=None):
+                  J_to_file=None, J_file=None, factor_ah=None):
     """
     ACE_stream: separate calculation for the process tensor, which can be used to simulate way longer time scales.
     """
