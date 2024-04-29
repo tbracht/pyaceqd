@@ -26,37 +26,39 @@ class TwoPhotonTimebinNew(TimeBin):
         return self.system(0, 2*self.tb, *self.pulses, **self.options)
 
 
-    def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix", verbose=False):
+    def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix", verbose=False, reduced=False, use_second_zero=False):
         """
         calculates the density matrix of the system, using the G2 functions.
         The density matrix is calculated in the basis |ee>, |el>, |le>, |ll>
         """
         density_matrix = np.zeros([4,4], dtype=complex)
         # trace
-        t,G2_EEEE,density_matrix[0,0],G2_EEEE_1,G2_EEEE_2 = self.rho_ee_ee()
+        t,G2_EEEE,density_matrix[0,0],G2_EEEE_1,G2_EEEE_2,_ = self.rho_ee_ee(use_second_zero=use_second_zero)
         _,G2_ELEL,density_matrix[1,1] = self.rho_el_el()
         _,G2_LELE,density_matrix[2,2] = self.rho_le_le()
-        _,G2_LLLL,density_matrix[3,3],G2_LLLL_1,G2_LLLL_2 = self.rho_ll_ll()
+        _,G2_LLLL,density_matrix[3,3],G2_LLLL_1,G2_LLLL_2,_ = self.rho_ll_ll(use_second_zero=use_second_zero)
         # ee_xx
-        _,G2_EEEL,density_matrix[0,1],G2_EEEL_1,G2_EEEL_2 = self.rho_ee_el()
-        density_matrix[1,0] = np.conj(density_matrix[0,1])
-        _,G2_EELE,density_matrix[0,2],G2_EELE_1,G2_EELE_2 = self.rho_ee_le()
-        density_matrix[2,0] = np.conj(density_matrix[0,2])
-        _,G2_EELL,density_matrix[0,3],G2_EELL_1,G2_EELL_2 = self.rho_ee_ll()
+        _,G2_EELL,density_matrix[0,3],G2_EELL_1,G2_EELL_2,_ = self.rho_ee_ll(use_second_zero=use_second_zero)
         density_matrix[3,0] = np.conj(density_matrix[0,3])
-        # el_xx
-        _,G2_ELLE,density_matrix[1,2],G2_ELLE_1,G2_ELLE_2 = self.rho_el_le()
-        density_matrix[2,1] = np.conj(density_matrix[1,2])
-        _,G2_ELLL,density_matrix[1,3],G2_ELLL_1,G2_ELLL_2 = self.rho_el_ll()
-        density_matrix[3,1] = np.conj(density_matrix[1,3])
-        # le_ll
-        _,G2_LELL,density_matrix[2,3],G2_LELL_1,G2_LELL_2 = self.rho_le_ll()
-        density_matrix[3,2] = np.conj(density_matrix[2,3])
+        if not reduced:
+            _,G2_EEEL,density_matrix[0,1],G2_EEEL_1,G2_EEEL_2 = self.rho_ee_el()
+            density_matrix[1,0] = np.conj(density_matrix[0,1])
+            _,G2_EELE,density_matrix[0,2],G2_EELE_1,G2_EELE_2 = self.rho_ee_le()
+            density_matrix[2,0] = np.conj(density_matrix[0,2])
+
+            # el_xx
+            _,G2_ELLE,density_matrix[1,2],G2_ELLE_1,G2_ELLE_2 = self.rho_el_le()
+            density_matrix[2,1] = np.conj(density_matrix[1,2])
+            _,G2_ELLL,density_matrix[1,3],G2_ELLL_1,G2_ELLL_2 = self.rho_el_ll()
+            density_matrix[3,1] = np.conj(density_matrix[1,3])
+            # le_ll
+            _,G2_LELL,density_matrix[2,3],G2_LELL_1,G2_LELL_2 = self.rho_le_ll()
+            density_matrix[3,2] = np.conj(density_matrix[2,3])
         # normalize 
         norm = np.trace(density_matrix)
 
         if save_dm:
-            np.save(filename+".npy", density_matrix)
+            np.save(filename+"_dm.npy", density_matrix)
         if save_all:
             np.save(filename+"_dm.npy", density_matrix)
             np.save(filename+"_t.npy", t)
@@ -97,7 +99,7 @@ class TwoPhotonTimebinNew(TimeBin):
             print("sigma_b: {}, sigma_bdag: {}, b_op: {}".format(self.sigma_b, self.sigma_bdag, self.b_op))
 
     # first the four functions for the trace of the density matrix
-    def rho_ee_ee(self, add_time=0):
+    def rho_ee_ee(self, add_time=0, use_second_zero=False):
         """
         calculates G2 assuming an XX-emission triggers the coincidence measurment at time t1, following an X at time t2, i.e.:
         <sigma^dagger_XX(t1) sigma^dagger_X(t2) sigma_x(t2) sigma_xx(t1)>
@@ -113,6 +115,7 @@ class TwoPhotonTimebinNew(TimeBin):
         tend = self.tb + add_time  # always the same
         def _rho_ee_ee(output_ops, sigma_X, sigma_Xdag):
             _G2 = np.zeros([len(t1)])
+            _G2_t1t2 = np.zeros([len(t1),len(t2)])
             with tqdm.tqdm(total=len(t1), leave=None) as tq:
                 with ThreadPoolExecutor(max_workers=self.workers) as executor:
                     futures = []
@@ -150,33 +153,36 @@ class TwoPhotonTimebinNew(TimeBin):
                     # plt.savefig("aa_tests/plot_{}.png".format(i))
                     # integrate over t_new
                     _G2[i] = np.trapz(temp_t2,t_new)
-            return _G2
+                    _G2_t1t2[i, -len(temp_t2):] = temp_t2 
+            return _G2, _G2_t1t2
         # first, case t1 <= t2
         out_op1 = self.sigma_xdag + "*" + self.sigma_x
         out_op_tau0 = self.sigma_bdag + "*" + self.sigma_xdag + "*" + self.sigma_x + "*" + self.sigma_b
         output_ops = [out_op1, out_op_tau0]
-        # at t1, apply sigma_b from left and sigma_bbdag from right
+        # at t1, apply sigma_b from left and sigma_bdag from right
         sigma_left = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
         sigma_right = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
-        _G2_1 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
+        _G2_1, _G21_t1t2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
+        if use_second_zero:
+            return t1, t2,_G2_1, np.trapz(_G2_1,t1)*self.gamma_e**2, _G2_1, _G2_1*0,  _G21_t1t2
         # second, case t2 <= t1
         out_op1 = self.sigma_bdag + "*" + self.sigma_b
         # should be zero, as t1=t2 is already covered by the first case
         out_op_tau0 = "0*" + self.sigma_xdag # + "*" + self.sigma_bdag + "*" + self.sigma_b + "*" + self.sigma_x  # this will always evaluate to zero for a diamond-shape system
         output_ops = [out_op1, out_op_tau0]
-        # at t1, apply sigma_b from left and sigma_bbdag from right
+        # at t1, apply sigma_x from left and sigma_xdag from right
         sigma_left = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_right = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
-        _G2_2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
+        _G2_2, _G22_t1t2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
         # combine both
         _G2 = _G2_1 + _G2_2
-        return t1, _G2, np.trapz(_G2,t1)*self.gamma_e**2, _G2_1, _G2_2
+        return t1, _G2, np.trapz(_G2,t1)*self.gamma_e**2, _G2_1, _G2_2, _G21_t1t2+_G22_t1t2
     
-    def rho_ll_ll(self):
+    def rho_ll_ll(self, use_second_zero=False):
         """
         same as for EE,EE, just in the second timebin
         """
-        return self.rho_ee_ee(add_time=self.tb)
+        return self.rho_ee_ee(add_time=self.tb, use_second_zero=use_second_zero)
 
     def rho_el_el(self, output_ops=None, sigma_X=None, sigma_Xdag=None):
         """
@@ -274,7 +280,9 @@ class TwoPhotonTimebinNew(TimeBin):
         sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_b = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
-        t1, _G2_1, eell_1 = self.four_time(output_ops, sigma_bdag, sigma_xdag, sigma_b)
+        t1, _G2_1, eell_1, G21_t1t2 = self.four_time(output_ops, sigma_bdag, sigma_xdag, sigma_b)
+        if use_second_zero:
+            return t1, _G2_1, eell_1, _G2_1, _G2_1*0, G21_t1t2
         # case 2: t2 <= t1
         output_ops = [self.sigma_bdag, self.sigma_b + "*" + self.sigma_x]
         sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
@@ -282,9 +290,8 @@ class TwoPhotonTimebinNew(TimeBin):
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         _G2_2 = _G2_1 * 0
         eell_2 = eell_1 * 0
-        if not use_second_zero:
-            t1, _G2_2, eell_2 = self.four_time(output_ops, sigma_xdag, sigma_bdag, sigma_x)
-        return t1, _G2_1 + _G2_2, eell_1 + eell_2, _G2_1, _G2_2
+        t1, _G2_2, eell_2, G22_t1t2 = self.four_time(output_ops, sigma_xdag, sigma_bdag, sigma_x)
+        return t1, _G2_1 + _G2_2, eell_1 + eell_2, _G2_1, _G2_2, G21_t1t2 + G22_t1t2
 
     def rho_ee_el(self, operators=None):
         output_ops = [self.sigma_x]
@@ -409,6 +416,7 @@ class TwoPhotonTimebinNew(TimeBin):
     def four_time(self, output_ops, sigma_1, sigma_2, sigma_3):
         t1 = self.t1
         _G2 = np.zeros([len(t1)], dtype=complex)
+        _G2_t1t2 = np.zeros([len(t1),len(t1)], dtype=complex)
         # loop over t1
         for i in tqdm.trange(len(t1),leave=None):
             # tau1: use the interval 0,...,tb-t1
@@ -445,8 +453,9 @@ class TwoPhotonTimebinNew(TimeBin):
             temp_t2[0] = futures[0][2][-1]
             for k in range(1,len(t2_array)):
                 temp_t2[k] = futures[k][1][-1]
+            _G2_t1t2[i, -len(temp_t2):] = temp_t2
             _G2[i] = np.trapz(temp_t2, t2_array)
-        return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+        return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2, _G2_t1t2
 
     def rho_el_le(self):
         # case t1 <= t2
@@ -454,14 +463,14 @@ class TwoPhotonTimebinNew(TimeBin):
         sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_b = {"operator": self.sigma_b, "applyFrom": "_left", "applyBefore":"false"}
-        t1, _G21, elle_1 = self.four_time(output_ops, sigma_bdag, sigma_x, sigma_b)
+        t1, _G21, elle_1, _ = self.four_time(output_ops, sigma_bdag, sigma_x, sigma_b)
 
         # case t2 <= t1
         output_ops = [self.sigma_b, self.sigma_xdag + "*" + self.sigma_b]
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_bdag = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         sigma_xdag = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
-        t1, _G22, elle_2 = self.four_time(output_ops, sigma_x, sigma_bdag, sigma_xdag)
+        t1, _G22, elle_2, _ = self.four_time(output_ops, sigma_x, sigma_bdag, sigma_xdag)
         return t1, _G21 + _G22, elle_1 + elle_2, _G21, _G22
 
     def rho_el_ll(self, calc_lell=False):
