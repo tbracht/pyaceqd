@@ -30,7 +30,10 @@ class Purity(TimeBin):
             self.gamma_e = self.options["gamma_e"]
         if self.gaussian_t is not None:
             self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,10*dt_small,*pulses,decimals=1)
-            
+            # _t = np.concatenate((_t,self.tb-_t))
+            # sort and remove duplicates
+            # _t = np.sort(np.unique(_t))
+            # self.t1 = _t
             # plt.clf()
             # plt.scatter(self.t1, np.zeros_like(self.t1))
             # plt.savefig("t1.png")
@@ -74,9 +77,10 @@ class Purity(TimeBin):
         new_options = dict(self.options)
         if output_ops is not None:
             new_options["output_ops"] = output_ops
-        return self.system(0, self.tb, *self.pulses, **new_options)
+        t_end = (self.factor_t + self.factor_tau + 1.1)*self.tb
+        return self.system(0, t_end, *self.pulses, **new_options)
 
-    def G2(self):
+    def G2(self, return_whole=False):
         sigma_left = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_right = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
         
@@ -113,6 +117,8 @@ class Purity(TimeBin):
                     _G2[j+i*len(t1),0] = np.abs(futures[j][2][-(n_tau+1)])
         # integrate over t1
         G2 = np.trapz(_G2, t_axis_complete, axis=0)
+        if return_whole:
+            return t1, t2, _G2
         return t2, G2
     
     def calc_purity(self):
@@ -171,7 +177,7 @@ class Indistinguishability(Purity):
         G1 = np.trapz(np.abs(_G1)**2, t_axis_complete, axis=0)
         return t2, G1
     
-    def simple_propagation(self):
+    def simple_propagation(self, return_whole=False):
         # most importantly, in all calculations, the same factor_t, factor_tau and tb must be used
         output_ops = [self.sigma_xdag + "*" + self.sigma_x]
         factor_tau = self.factor_tau
@@ -193,9 +199,14 @@ class Indistinguishability(Purity):
         G0 = val[i_indices] * val[i_indices + j_indices]
         # integrate over t1
         G0_tau = np.trapz(G0, t1, axis=0)
+        if return_whole:
+            return t1, t2, G0
         return t2, G0_tau
 
     def calc_indistinguishability(self):
+        """
+        returns indistinguishability,single-photon purity
+        """
         # calculate G0, G1 and G2
         # and integrate over tau=0,...,tb/2 and tb/2,...,3tb/2
         t,g1 = self.G1()
@@ -219,29 +230,90 @@ class Indistinguishability(Purity):
         # print("G01", G01, "G02", G02)
 
         result = (G01-G11+G21)/(G02-G12+G22)
-        return 1 - result
+        return 1 - result, 1-G21/G22
 
-# p1 = ChirpedPulse(tau_0=4, e_start=0, alpha=0, t0=16, e0=1, polar_x=1)
+# tau=3
+# p1 = ChirpedPulse(tau_0=tau, e_start=0, alpha=0, t0=4*tau, e0=1, polar_x=1)
 # options = {"verbose": False, "gamma_e": 1/100, "lindblad": True,
 #  "temp_dir": '/mnt/temp_data/', "phonons": False}
 
-# a = Indistinguishability(tls_, "|0><1|_2", "|1><0|_2", p1, dt=0.1, tb=2000, simple_exp=False, gaussian_t=32, verbose=False, workers=15, t_simul=None, options=options)
+def resample(x, y, z, s_x, s_y):
+    x_new = np.zeros(int((len(x))/s_x))
+    y_new = np.zeros(int((len(y))/s_y))
+    z_new = np.zeros((len(y_new),len(x_new)))
+    for i in range(len(x_new)):
+        for j in range(len(y_new)):
+            x_new[i] = x[int(i*s_x)]
+            y_new[j] = y[int(j*s_y)]
+            z_new[j,i] = z[int(j*s_y),int(i*s_x)]
+    return x_new, y_new, z_new
+
+# a = Purity(tls, "|0><1|_2", "|1><0|_2", p1, dt=0.1, tb=100, simple_exp=False, gaussian_t=None, verbose=False, workers=15, t_simul=None, options=options, factor_t=1, factor_tau=1)
+# t1,t2,g2 = a.G2(return_whole=True)
+# print(t1)
+# print(t2)
+# plt.clf()
+# plt.pcolormesh(t2, t1, np.abs(g2)**2)
+# plt.xlabel("tau")
+# plt.ylabel("t1")
+# plt.colorbar()
+# plt.savefig("g2.png")
+# plt.clf()
+# a = Indistinguishability(tls, "|0><1|_2", "|1><0|_2", p1, dt=0.1, tb=2000, simple_exp=False, gaussian_t=None, verbose=False, workers=15, t_simul=None, options=options)
 # print(a.calc_indistinguishability())
 # t,x = a.simple_propagation()
+# t,x = a.calc_timedynamics(output_ops=["|1><1|_2"])
 # plt.clf()
-# plt.plot(t,x)
+# plt.plot(t.real,x.real)
 # # plt.plot(t[int(2000/0.1):]-2000,x[int(2000/0.1):])
-# plt.savefig("g0_train.png")
+# plt.savefig("x_train.png")
 # plt.clf()
-# # t,g2 = a.G2()
-# # np.save("g2_train2.npy", g2)
-# # np.save("t_train2.npy", t)
-# dt = 0.1
-# tb = 2000
-# n_1 = int(0.5*tb/dt)
+# t,g2 = a.G2()
+# t2,xtau = a.simple_propagation(return_whole=False)
+# t1,t2,g0 = a.simple_propagation(return_whole=True)
+# print(t1.shape, t2.shape, g0.shape)
+# plt.clf()
+# plt.pcolormesh(*resample(t2, t1, g0, 10, 20))
+# plt.xlim(0,150)
+# plt.ylim(0,150)
+# plt.savefig("xx_g0_1pi.png")
+# tau,g0 = a.simple_propagation()
+# np.save("g0_train_1pi.npy", g0)
+# np.save("t_g0_train_1pi.npy", tau)
+# t1,t2,g2 = a.G2(return_whole=True)
+# tau,g1 = a.G1()
+# np.save("g1_train_1pi.npy", g1)
+# np.save("t1_g1_train_1pi.npy", tau)
+# g1 = np.load("g1_train_1pi.npy")
+# tau = np.load("t1_g1_train_1pi.npy")
+# plt.clf()
+# plt.plot(tau,g1)
+# plt.xlabel("tau")
+# plt.savefig("g1_train_1pi.png")
 
-# t = np.load("t_train2.npy")
-# g2 = np.load("g2_train2.npy")
+# plt.clf()
+# plt.plot(t,g2)
+# plt.savefig("g2_train_1pi.png")
+# np.save("g2_train_1pi.npy", g2)
+# np.save("t_train_1pi.npy", t)
+# plt.clf()
+# plt.plot(t,g2)
+# plt.xlim(1900,2100)
+# plt.savefig("g2_train_zoom_1pi.png")
+# plt.clf()
+# plt.pcolormesh(tau, t, np.abs(g2)**2)
+# plt.xlabel("tau")
+# plt.ylabel("t1")
+# plt.colorbar()
+# plt.savefig("g2_2d.png")
+# np.save("g2_tau_1pi.npy", g2)
+# np.save("t_tau_1pi.npy", t)
+# # dt = 0.1
+# # tb = 2000
+# # n_1 = int(0.5*tb/dt)
+
+# t = np.load("t_tau_1pi.npy")
+# g2 = np.load("g2_tau_1pi.npy")
 
 # # print(t[:n_1])
 # # print(t[n_1:3*n_1])
@@ -251,11 +323,12 @@ class Indistinguishability(Purity):
 # print(G22)
 # print(1-G21/G22)
 # plt.clf()
-# plt.plot(t,g2)
-# plt.savefig("g2_train2.png")
+# plt.plot(t,g2,"b-")
+# plt.plot(-t,g2,"b-")
+# # plt.xlim(-200,200)
 # plt.xlabel("tau")
 # plt.ylabel("G2")
-# plt.clf()
+# plt.savefig("g2_tau_1pi.png")
 
 # t,g1 = a.G1()
 # np.save("g1_train2.npy", g1)
