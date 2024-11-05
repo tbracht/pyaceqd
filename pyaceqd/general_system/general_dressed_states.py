@@ -22,7 +22,7 @@ def select_equally_spaced_colors(n):
     
     return colors
 
-def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, **options):
+def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, **options):
     options["output_ops"] = output_ops_dm(dim)
     # firstonly is not used when calculating the density matrix, only for the composition of the dressed states
     _,rho = compose_dm(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
@@ -31,9 +31,9 @@ def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, 
     data = system(t_start, t_end, *pulses, **options)
     if colors is None:
         colors = select_equally_spaced_colors(n=np.prod(dim))
-    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states)
+    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states, return_eigenvectors=return_eigenvectors)
 
-def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None):
+def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None, return_eigenvectors=False):
     _dim = np.prod(dim)
     t = data[0].real
     if plot:
@@ -152,4 +152,6 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_
         plt.savefig(filename + "_ds_occ.png")
         plt.clf()
     populations = np.diagonal(rho, axis1=1, axis2=2)
+    if return_eigenvectors:
+        return t, populations, e_values, ds_occ, s_colors, n_colors, e_vectors, rho
     return t, populations, e_values, ds_occ, s_colors, n_colors

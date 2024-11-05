@@ -58,10 +58,16 @@ class Pulse:
         w_start = self.e_start / hbar  # in 1 / ps
         return w_start + self.w_gain * (t - self.t0)
 
+    def set_phase(self, f):
+        self.phase_ = f
+
     def get_full_phase(self,t):
+        if self.phase_ is not None:
+            return self.phase_(t)
         w_start = self.e_start / hbar  # in 1 / ps
         return w_start * (t - self.t0) + 0.5*self.w_gain * ((t - self.t0) **2) + self.phase
     
+
     def get_energies(self):
         """
         get energy diff of +- tau for chirped pulse

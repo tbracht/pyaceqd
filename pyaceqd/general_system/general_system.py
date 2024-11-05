@@ -198,7 +198,10 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
     _remove_rf_file = False
     if pulse_file_x is None:
         _remove_pulse_file = True
-        pulse_file_x, pulse_file_y = generate_pulsefiles(t=t, pulses=pulses, temp_dir=temp_dir, system_prefix=system_prefix, suffix=suffix)
+        if firstonly:
+            pulse_file_x, pulse_file_y = generate_pulsefiles(t=t, pulses=[pulses[0]], temp_dir=temp_dir, system_prefix=system_prefix, suffix=suffix)
+        else:
+            pulse_file_x, pulse_file_y = generate_pulsefiles(t=t, pulses=pulses, temp_dir=temp_dir, system_prefix=system_prefix, suffix=suffix)
     try:
         # write the simulation param file
         with open(tmp_file,'w') as f:

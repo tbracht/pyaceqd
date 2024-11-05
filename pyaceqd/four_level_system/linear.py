@@ -4,11 +4,14 @@ import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
 
-def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     system_prefix = "b_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = B
-    system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|1><1|_4".format(delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
+    if shift_x:
+        system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|1><1|_4".format(delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
+    else:
+        system_op = ["-{}*|3><3|_4".format(delta_b),"{}*|2><2|_4".format(delta_xy)]
     boson_op = "1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4"
     lindblad_ops = []
     if lindblad:
@@ -17,6 +20,10 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
         lindblad_ops = [["|0><1|_4",gamma_e],["|0><2|_4",gamma_e],
                         ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
     interaction_ops = [["|1><0|_4+|3><1|_4","x"],["|2><0|_4+|3><2|_4","y"]]
+
+    if coupl_xy != 0:
+        system_op.append("{}*|1><2|_4".format(coupl_xy))
+        system_op.append("{}*|2><1|_4".format(coupl_xy))
     
     rf_op = None
     if rf:
@@ -29,10 +36,9 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/
                   dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
-def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="biexciton_dressed", firstonly=False, visible_states=None, **options):
-    colors = ["#0000FF", "#00CC33", "#F9A627", "#FF0000"]
+def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, colors=["#0000FF", "#00CC33", "#F9A627", "#FF0000"], filename="biexciton_dressed", firstonly=False, visible_states=None, return_eigenvectors=False, **options):
     dim = 4
-    return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=colors, visible_states=visible_states, **options)
+    return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
 
 def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", n_photon=1,
