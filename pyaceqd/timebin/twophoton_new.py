@@ -33,13 +33,19 @@ class TwoPhotonTimebinNew(TimeBin):
         """
         density_matrix = np.zeros([4,4], dtype=complex)
         # trace
-        t,G2_EEEE,density_matrix[0,0],G2_EEEE_1,G2_EEEE_2,_ = self.rho_ee_ee(use_second_zero=use_second_zero)
+        t,_,G2_EEEE,density_matrix[0,0],G2_EEEE_1,G2_EEEE_2,_ = self.rho_ee_ee(use_second_zero=use_second_zero)
         _,G2_ELEL,density_matrix[1,1] = self.rho_el_el()
         _,G2_LELE,density_matrix[2,2] = self.rho_le_le()
-        _,G2_LLLL,density_matrix[3,3],G2_LLLL_1,G2_LLLL_2,_ = self.rho_ll_ll(use_second_zero=use_second_zero)
+        _,_,G2_LLLL,density_matrix[3,3],G2_LLLL_1,G2_LLLL_2,_ = self.rho_ll_ll(use_second_zero=use_second_zero)
         # ee_xx
         _,G2_EELL,density_matrix[0,3],G2_EELL_1,G2_EELL_2,_ = self.rho_ee_ll(use_second_zero=use_second_zero)
         density_matrix[3,0] = np.conj(density_matrix[0,3])
+        if reduced:
+            G2_EEEL,G2_EEEL_1,G2_EEEL_2=0*G2_EEEE,0*G2_EEEE_1,0*G2_EEEE_1
+            G2_EELE,G2_EELE_1,G2_EELE_2=0*G2_EEEE,0*G2_EEEE_1,0*G2_EEEE_1
+            G2_ELLE,G2_ELLE_1,G2_ELLE_2=0*G2_EEEE,0*G2_EEEE_1,0*G2_EEEE_1
+            G2_ELLL,G2_ELLL_1,G2_ELLL_2=0*G2_EEEE,0*G2_EEEE_1,0*G2_EEEE_1
+            G2_LELL,G2_LELL_1,G2_LELL_2=0*G2_EEEE,0*G2_EEEE_1,0*G2_EEEE_1
         if not reduced:
             _,G2_EEEL,density_matrix[0,1],G2_EEEL_1,G2_EEEL_2 = self.rho_ee_el()
             density_matrix[1,0] = np.conj(density_matrix[0,1])
@@ -164,7 +170,7 @@ class TwoPhotonTimebinNew(TimeBin):
         sigma_right = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         _G2_1, _G21_t1t2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
         if use_second_zero:
-            return t1, t2,_G2_1, np.trapz(_G2_1,t1)*self.gamma_e**2, _G2_1, _G2_1*0,  _G21_t1t2
+            return t1, t2, _G2_1, np.trapz(_G2_1,t1)*self.gamma_e**2, _G2_1, _G2_1*0,  _G21_t1t2
         # second, case t2 <= t1
         out_op1 = self.sigma_bdag + "*" + self.sigma_b
         # should be zero, as t1=t2 is already covered by the first case
@@ -176,7 +182,7 @@ class TwoPhotonTimebinNew(TimeBin):
         _G2_2, _G22_t1t2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
         # combine both
         _G2 = _G2_1 + _G2_2
-        return t1, _G2, np.trapz(_G2,t1)*self.gamma_e**2, _G2_1, _G2_2, _G21_t1t2+_G22_t1t2
+        return t1, t2, _G2, np.trapz(_G2,t1)*self.gamma_e**2, _G2_1, _G2_2, _G21_t1t2+_G22_t1t2
     
     def rho_ll_ll(self, use_second_zero=False):
         """
