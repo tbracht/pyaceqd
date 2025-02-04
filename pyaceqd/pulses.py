@@ -85,6 +85,23 @@ class Pulse:
     def copy(self):
         return Pulse(self.tau, self.e_start, self.w_gain, self.t0, self.e0, self.phase, self.polar_x)
 
+class AsymmetricPulse(Pulse):
+    def __init__(self, tau1, tau2, e_start, t0=0, e0=1, phase=0, polar_x=1, polars=None):
+        self.tau1 = tau1
+        self.tau2 = tau2
+        super().__init__(tau1, e_start, w_gain=0, t0=t0, e0=e0, phase=phase, polar_x=polar_x, polars=polars)
+
+    def get_envelope(self, t):
+        # gaussian with tau1 up to t0 and tau2 after t0
+        t_smaller = t[t <= self.t0]
+        t_larger = t[t > self.t0]
+        e_smaller = self.e0 * np.exp(-0.5 * ((t_smaller - self.t0) / self.tau1) ** 2) / (np.sqrt(2 * np.pi) * self.tau1)
+        e_larger = self.e0 * np.exp(-0.5 * ((t_larger - self.t0) / self.tau2) ** 2) / (np.sqrt(2 * np.pi) * self.tau1)  #  divide by tau1 to get a smooth transition
+        return np.concatenate((e_smaller, e_larger))
+    
+    def copy(self):
+        return AsymmetricPulse(self.tau1, self.tau2, self.e_start, self.t0, self.e0, self.phase, self.polar_x)
+
 class ChirpedPulse(Pulse):
     def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1, phase=0, polars=None):
         self.tau_0 = tau_0
@@ -146,11 +163,14 @@ class CWLaser(Pulse):
     cw-laser, i.e., it is just on the whole time without any switch-on process
     """
 
-    def __init__(self, e0, e_start=0, polar_x=1, polars=None):
-        super().__init__(tau=5, e_start=e_start, e0=e0, polar_x=polar_x, polars=polars)
+    def __init__(self, e0, e_start=0, polar_x=1, phase=0,polars=None):
+        super().__init__(tau=5, e_start=e_start, e0=e0, polar_x=polar_x, polars=polars, phase=phase)
 
     def get_envelope(self, t):
         return self.e0
+    
+    def copy(self):
+        return CWLaser(self.e0, self.e_start, self.polar_x, self.phase)
 
 class SmoothRectangle(Pulse):
     """
