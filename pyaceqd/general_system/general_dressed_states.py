@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyaceqd.tools import export_csv, basis_states, compose_dm, output_ops_dm
 import colorsys
+from tabulate import tabulate
 
 def hex_to_rgba(hex_code):
     hex_code = hex_code.lstrip('#')
@@ -22,7 +23,7 @@ def select_equally_spaced_colors(n):
     
     return colors
 
-def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, **options):
+def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, print_states=None, **options):
     options["output_ops"] = output_ops_dm(dim)
     # firstonly is not used when calculating the density matrix, only for the composition of the dressed states
     _,rho = compose_dm(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
@@ -31,9 +32,9 @@ def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, 
     data = system(t_start, t_end, *pulses, **options)
     if colors is None:
         colors = select_equally_spaced_colors(n=np.prod(dim))
-    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states, return_eigenvectors=return_eigenvectors)
+    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states, return_eigenvectors=return_eigenvectors, print_states=print_states)
 
-def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None, return_eigenvectors=False):
+def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None, return_eigenvectors=False, print_states=None):
     _dim = np.prod(dim)
     t = data[0].real
     if plot:
@@ -68,6 +69,22 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_
             angle = np.angle(e_vectors[i,0,0])
         e_vectors[i,:,:] = e_vectors[i,:,:]*np.exp(-1j*angle)
     
+    if print_states is not None:
+        _t = print_states
+        i = np.argmin(np.abs(t-_t))
+        header = basis_states(dim)
+        # add column in front for the dressed state index
+        header.insert(0,"t:{:.2f}".format(t[i]))
+        header.append("Energy")
+        table = []
+        for j in range(_dim):
+            row = ["ds"+str(j+1)]
+            row.extend(np.abs(e_vectors[i,j])**2)
+            row.extend([e_values[i,j]])
+            table.append(row)
+        print(tabulate(table,headers=header,floatfmt=".2f"))
+        # print(tabulate(np.abs(e_vectors[i])**2,headers=header,floatfmt=".2f"))
+
     n_colors = np.empty([_dim,e_values.shape[0]])  # for gnuplot
     if len(colors) != _dim:
         print("Error: Number of colors does not match number of dressed states.")
