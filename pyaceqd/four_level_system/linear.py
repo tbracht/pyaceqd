@@ -9,9 +9,9 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_x
     system_prefix = "b_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = B
     if shift_x:
-        system_op = ["-{}*|3><3|_4".format(delta_b),"-{}*|1><1|_4".format(delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
+        system_op = ["{}*|3><3|_4".format(-delta_b),"{}*|1><1|_4".format(-delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
     else:
-        system_op = ["-{}*|3><3|_4".format(delta_b),"{}*|2><2|_4".format(delta_xy)]
+        system_op = ["{}*|3><3|_4".format(-delta_b),"{}*|2><2|_4".format(delta_xy)]
     boson_op = "1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4"
     lindblad_ops = []
     if lindblad:
@@ -41,49 +41,55 @@ def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_l
     return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
 
 def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", n_photon=1,
-                t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
-    n = n_photon + 1
-    for i in range(len(output_ops)):
-        output_ops[i] = output_ops[i].replace("_2","_{}".format(n))
-    initial = initial.replace("_2","_{}".format(n))
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=None, initial=None,
+                t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False, n_phot1=1, n_phot2=1):
+    n1 = n_phot1 + 1
+    n2 = n_phot2 + 1
+    # initial state and output operators with correct number of photons
+    if initial is None:
+        initial = "|0><0|_4 otimes |0><0|_{} otimes |0><0|_{}".format(n1,n2)
+    if output_ops is None:
+        output_ops = ["|0><0|_4 otimes Id_{} otimes Id_{}".format(n1,n2),
+                      "|1><1|_4 otimes Id_{} otimes Id_{}".format(n1,n2),
+                      "|2><2|_4 otimes Id_{} otimes Id_{}".format(n1,n2),
+                      "|3><3|_4 otimes Id_{} otimes Id_{}".format(n1,n2)]
     system_prefix = "b_linear_cavity"
     # |0> = G, |1> = X, |2> = Y, |3> = B
-    system_op = ["-{}*|3><3|_4 otimes Id_2 otimes Id_2".format(delta_b).replace("_2","_{}".format(n)),
-                 "-{}*|1><1|_4 otimes Id_2 otimes Id_2".format(delta_xy/2).replace("_2","_{}".format(n)),
-                 "{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy/2).replace("_2","_{}".format(n))]
-    boson_op = "|1><1|_4 otimes Id_2 otimes Id_2 + |2><2|_4 otimes Id_2 otimes Id_2 + 2*|3><3|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n))
+    system_op = ["-{}*|3><3|_4 otimes Id_{} otimes Id_{}".format(delta_b,n1,n2),
+                 "-{}*|1><1|_4 otimes Id_{} otimes Id_{}".format(delta_xy/2,n1,n2),
+                 "{}*|2><2|_4 otimes Id_{} otimes Id_{}".format(delta_xy/2,n1,n2)]
+    boson_op = "|1><1|_4 otimes Id_{} otimes Id_{} + |2><2|_4 otimes Id_{} otimes Id_{} + 2*|3><3|_4 otimes Id_{} otimes Id_{}".format(n1,n2,n1,n2,n1,n2)
     lindblad_ops = []
     # QD decay outside of the cavity
     if lindblad:
         if gamma_b is None:
             gamma_b = gamma_e
-        lindblad_ops = [["|0><1|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_e],
-                        ["|0><2|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_e],
-                        ["|1><3|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_b],
-                        ["|2><3|_4 otimes Id_2 otimes Id_2".replace("_2","_{}".format(n)),gamma_b]]
+        lindblad_ops = [["|0><1|_4 otimes Id_{} otimes Id_{}".format(n1,n2),gamma_e],
+                        ["|0><2|_4 otimes Id_{} otimes Id_{}".format(n1,n2),gamma_e],
+                        ["|1><3|_4 otimes Id_{} otimes Id_{}".format(n1,n2),gamma_b],
+                        ["|2><3|_4 otimes Id_{} otimes Id_{}".format(n1,n2),gamma_b]]
     # interaction with laser
-    interaction_ops = [["|1><0|_4 otimes Id_2 otimes Id_2 +|3><1|_4 otimes Id_2 otimes Id_2 ".replace("_2","_{}".format(n)),"x"],
-                       ["|2><0|_4 otimes Id_2 otimes Id_2 +|3><2|_4 otimes Id_2 otimes Id_2 ".replace("_2","_{}".format(n)),"y"]]
+    interaction_ops = [["|1><0|_4 otimes Id_{} otimes Id_{} +|3><1|_4 otimes Id_{} otimes Id_{} ".format(n1,n2,n1,n2),"x"],
+                       ["|2><0|_4 otimes Id_{} otimes Id_{} +|3><2|_4 otimes Id_{} otimes Id_{} ".format(n1,n2,n1,n2),"y"]]
     # cavity decay
-    lindblad_ops.append(["Id_4 otimes b_2 otimes Id_2".replace("_2","_{}".format(n)),cav_loss])
-    lindblad_ops.append(["Id_4 otimes Id_2 otimes b_2".replace("_2","_{}".format(n)),cav_loss])
+    lindblad_ops.append(["Id_4 otimes b_{} otimes Id_{}".format(n1,n2),cav_loss])
+    lindblad_ops.append(["Id_4 otimes Id_{} otimes b_{}".format(n1,n2),cav_loss])
     # cavity detuning
-    system_op.append(" {} * (Id_4 otimes n_2 otimes Id_2)".format(delta_cx).replace("_2","_{}".format(n)))
-    system_op.append(" {} * (Id_4 otimes Id_2 otimes n_2)".format(delta_cx).replace("_2","_{}".format(n)))
+    system_op.append(" {} * (Id_4 otimes n_{} otimes Id_{})".format(delta_cx,n1,n2))
+    system_op.append(" {} * (Id_4 otimes Id_{} otimes n_{})".format(delta_cx,n1,n2))
     # cavity-qd coupling
     # X-cavity
-    system_op.append("{} * (|1><0|_4 otimes b_2 otimes Id_2 + |0><1|_4 otimes bdagger_2 otimes Id_2)".format(cav_coupl).replace("_2","_{}".format(n)))
-    system_op.append("{} * (|3><1|_4 otimes b_2 otimes Id_2 + |1><3|_4 otimes bdagger_2 otimes Id_2)".format(cav_coupl).replace("_2","_{}".format(n)))
+    system_op.append("{} * (|1><0|_4 otimes b_{} otimes Id_{} + |0><1|_4 otimes bdagger_{} otimes Id_{})".format(cav_coupl,n1,n2,n1,n2))
+    system_op.append("{} * (|3><1|_4 otimes b_{} otimes Id_{} + |1><3|_4 otimes bdagger_{} otimes Id_{})".format(cav_coupl,n1,n2,n1,n2))
     # Y-cavity
-    system_op.append("{} * (|2><0|_4 otimes Id_2 otimes b_2 + |0><2|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl).replace("_2","_{}".format(n)))
-    system_op.append("{} * (|3><2|_4 otimes Id_2 otimes b_2 + |2><3|_4 otimes Id_2 otimes bdagger_2)".format(cav_coupl).replace("_2","_{}".format(n)))
+    system_op.append("{} * (|2><0|_4 otimes Id_{} otimes b_{} + |0><2|_4 otimes Id_{} otimes bdagger_{})".format(cav_coupl,n1,n2,n1,n2))
+    system_op.append("{} * (|3><2|_4 otimes Id_{} otimes b_{} + |2><3|_4 otimes Id_{} otimes bdagger_{})".format(cav_coupl,n1,n2,n1,n2))
     
     rf_op = None
     if rf:
-        rf_op = "|1><1|_4 otimes Id_{} otimes Id_{}".format(n,n)
-        rf_op = rf_op + " + Id_4 otimes n_{} otimes Id_{}".format(n,n)
-        rf_op = rf_op + " + Id_4 otimes Id_{} otimes n_{}".format(n,n)
+        rf_op = "|1><1|_4 otimes Id_{} otimes Id_{}".format(n1,n2)
+        rf_op = rf_op + " + Id_4 otimes n_{} otimes Id_{}".format(n1,n2)
+        rf_op = rf_op + " + Id_4 otimes Id_{} otimes n_{}".format(n1,n2)
         if pulse_file_x is not None and rf_file is None:
             print("Error: pulse file is given, but no file for rotating frame")
             return 0
@@ -94,10 +100,10 @@ def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, ga
                   dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
     return result
 
-def biexciton_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_photons_dressed", firstonly=False, visible_states=None, **options):
-    # dim = 2 for TLS
-    n = options["n_photon"] + 1
-    dim = [2,n,n]
+def biexciton_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="biexciton_photons_dressed", firstonly=False, visible_states=None, **options):
+    n1 = options["n_phot1"] + 1 
+    n2 = options["n_phot2"] + 1
+    dim = [4,n1,n2]
     return dressed_states(biexciton_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
 
 def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
@@ -149,3 +155,51 @@ def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delt
 def biexciton_photons_extended_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="biexciton_photons_extended_dressed", firstonly=False, visible_states=None, **options):
     dim = 18
     return dressed_states(biexciton_photons_extended, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
+
+def biexciton_sensors(t_start, t_end, *pulses, dt=0.1, delta_xy=0, shift_x=True, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", t_mem=12.8, dressedstates=False, rf=False, rf_file=None, firstonly=False):
+    system_prefix = "b_linear_sensor"
+    # |0> = G, |1> = X, |2> = Y, |3> = B
+    if shift_x:
+        system_op = ["{}*|3><3|_4 otimes Id_2 otimes Id_2".format(-delta_b),"{}*|1><1|_4 otimes Id_2 otimes Id_2".format(-delta_xy/2),"{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy/2)]
+    else:
+        system_op = ["{}*|3><3|_4 otimes Id_2 otimes Id_2".format(-delta_b),"{}*|2><2|_4 otimes Id_2 otimes Id_2".format(delta_xy)]
+    boson_op = "1*(|1><1|_4 otimes Id_2 otimes Id_2 + |2><2|_4 otimes Id_2 otimes Id_2) + 2*(|3><3|_4 otimes Id_2 otimes Id_2) "
+    lindblad_ops = []
+    if lindblad:
+        if gamma_b is None:
+            gamma_b = gamma_e
+        lindblad_ops = [["|0><1|_4 otimes Id_2 otimes Id_2",gamma_e],["|0><2|_4 otimes Id_2 otimes Id_2",gamma_e],
+                        ["|1><3|_4 otimes Id_2 otimes Id_2",gamma_b],["|2><3|_4 otimes Id_2 otimes Id_2",gamma_b]]
+    interaction_ops = [["|1><0|_4 otimes Id_2 otimes Id_2 +|3><1|_4 otimes Id_2 otimes Id_2","x"],
+                       ["|2><0|_4 otimes Id_2 otimes Id_2 +|3><2|_4 otimes Id_2 otimes Id_2","y"]]
+    
+    rf_op = None
+    if rf:
+        # 2*|3><3|_4 because B contains 2 excitons
+        rf_op = "|1><1|_4 otimes Id_2 otimes Id_2 + |2><2|_4 otimes Id_2 otimes Id_2 + 2*(|3><3|_4 otimes Id_2 otimes Id_2)" 
+
+    # sensor hamiltonian
+    system_op.append("{} * (Id_4 otimes |1><1|_2 otimes Id_2)".format(delta_s1))
+    system_op.append("{} * (Id_4 otimes Id_2 otimes |1><1|_2)".format(delta_s2))
+    # sensor coupling
+    # coupling to G-Y
+    system_op.append("{} * (|2><0|_4 otimes |0><1|_2 otimes Id_2 + |0><2|_4 otimes |1><0|_2 otimes Id_2)".format(epsilon))
+    # coupling to Y-B
+    system_op.append("{} * (|3><2|_4 otimes |0><1|_2 otimes Id_2 + |2><3|_4 otimes |1><0|_2 otimes Id_2)".format(epsilon))
+    # coupling to G-X
+    system_op.append("{} * (|1><0|_4 otimes Id_2 otimes |0><1|_2 + |0><1|_4 otimes Id_2 otimes |1><0|_2)".format(epsilon))    
+    # coupling to X-B
+    system_op.append("{} * (|3><1|_4 otimes Id_2 otimes |0><1|_2 + |1><3|_4 otimes Id_2 otimes |1><0|_2)".format(epsilon))
+
+    # sensor loss
+    if linewidth2 is None:
+        linewidth2 = linewidth1
+    lindblad_ops.append(["Id_4 otimes |0><1|_2 otimes Id_2", linewidth1])
+    lindblad_ops.append(["Id_4 otimes Id_2 otimes |0><1|_2", linewidth2])
+
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only,
+                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
+    return result
