@@ -12,7 +12,7 @@ from pyaceqd.constants import hbar
 import pyaceqd.pulsegenerator as pg
 
 class RabiRotations():
-    def __init__(self, dt=0.1, tau=5, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1, t_mem=10) -> None:
+    def __init__(self, dt=0.1, tau=5, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1, t_mem=10, temp_dir="/mnt/temp_data/") -> None:
         self.dt = dt
         self.tau = tau
         self.areas = np.linspace(0, area_max, n_area)
@@ -29,7 +29,7 @@ class RabiRotations():
         else:
             self.pt_name = "pt_T{:.1f}K_AE{:.1f}_AHratio{:.2f}_coupl{:.1f}_dt{:.2f}_tmem{:.1f}.ptr".format(self.temperature,self.ae,self.ah_ratio,self.phonon_factor,self.dt,self.t_mem)
         self.full_names = [self.pt_name+"_initial",self.pt_name+"_initial_0", self.pt_name+"_repeated", self.pt_name+"_repeated_0"]
-        self.options = dict({"gamma_e": self.gamma_e,"dt": self.dt,"phonons": self.phonons, "temp_dir": "/mnt/temp_data/", "pt_file": self.pt_name})  # "factor_ah": ah_ratio, "ae": self.ae,
+        self.options = dict({"gamma_e": self.gamma_e,"dt": self.dt,"phonons": self.phonons, "temp_dir": temp_dir, "pt_file": self.pt_name})  # "factor_ah": ah_ratio, "ae": self.ae,
         if os.path.exists(self.full_names[0]):
             print("Warning: pt files already exist")
 
