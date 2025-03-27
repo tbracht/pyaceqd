@@ -14,7 +14,7 @@ hbar = constants.hbar  # meV*ps
 
 def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
-             J_to_file=None, J_file=None, factor_ah=None, **options):
+             J_to_file=None, J_file=None, factor_ah=None, use_infinite=False, threshold=10, **options):
     """
     t_start: time at which the simulation starts in ps
     t_end: time at which the simulation ends in ps
@@ -65,9 +65,9 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
         pulse_file = pulse_file_x
 
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
-                  multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=str(int(threshold)), threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
-                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah)
+                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite)
     return result
 
 def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, colors=["#0000FF", "#FF0000"], visible_states=None, return_eigenvectors=False, **options):
@@ -81,7 +81,7 @@ def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=Non
     return dressed_states(tls, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
 
 def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], initial=None, dressedstates=False, rf=False, rf_file=None, firstonly=False):
+         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], initial=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, use_infinite=False):
     system_prefix = "tls_two_sensor"
     system_op = []
     boson_op = "|1><1|_2 otimes Id_2 otimes Id_2"
@@ -114,7 +114,7 @@ def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
-                  firstonly=firstonly)
+                  firstonly=firstonly, use_infinite=use_infinite)
     return result
 
 def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, cav_coupl2=None, cav_loss2=None, delta_cx2=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
