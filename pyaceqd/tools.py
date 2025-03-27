@@ -275,7 +275,7 @@ def read_calibration_file(calibration_file):
 
     gamma_e = 1/lifetime_exciton
     gamma_b = 1/(lifetime_biexciton*2)
-    gamma_d = 1/lifetime_dark
+    gamma_d = 0  # 1/lifetime_dark
 
     return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
 

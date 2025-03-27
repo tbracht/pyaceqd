@@ -111,10 +111,17 @@ def read_result_1d(data):
         result[i+1] = data[:,2*i+1] + 1j*data[:,2*i+2]
     return result
 
+def read_hamiltonian(data):
+    n = data.shape[0]
+    result = np.empty([n,n], dtype=complex)
+    for i in range(n):
+        result[:,i] = data[:,2*i+1] + 1j*data[:,2*i+2]
+    return result
+
 def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7, \
                   system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False, \
-                  J_to_file=None, J_file=None, factor_ah=None):
+                  J_to_file=None, J_file=None, factor_ah=None, use_infinite=False, print_H=False):
     """
     ACE_stream: separate calculation for the process tensor, which can be used to simulate way longer time scales.
     """
@@ -133,6 +140,8 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
         pt_file = "{}_{}nm_{}k_th{}_tmem{}_dt{}.ptr".format(system_prefix,ae,temperature,threshold,t_mem,dt)
         if J_file is not None:
             pt_file = "{}_{}_{}k_th{}_tmem{}_dt{}.ptr".format(system_prefix,os.path.splitext(J_file)[0],temperature,threshold,t_mem,dt)
+        if use_infinite:
+            pt_file = "{}_{}k_th{}_dt{}.pt".format(system_prefix,temperature,threshold,dt)
     if phonons:
         if verbose and os.path.exists(pt_file+"_initial") and J_to_file is None:
             print("using pt_file " + pt_file)
@@ -145,13 +154,17 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             with open(generate_file,'w') as f:
                 f.write("dt {}\n".format(dt))
                 f.write("te {}\n".format(2*t_mem))
-                f.write("t_mem {}\n".format(t_mem))
-                f.write("buffer_blocksize {}\n".format(buffer_blocksize))
                 f.write("threshold 1e-{}\n".format(threshold))
-                f.write("odd_threshold_ratio {}\n".format(threshold_ratio))
-                f.write("dict_zero 1e-{}\n".format(dict_zero))
-                f.write("Gaussian_precalc_FFT  true\n")
-                f.write("use_Gaussian_repeat true\n")
+                if use_infinite:
+                    f.write("use_Gaussian_infinite true\n")
+                    f.write("infinite_normalize_iter 200\n")
+                else:
+                    f.write("t_mem {}\n".format(t_mem))
+                    f.write("buffer_blocksize {}\n".format(buffer_blocksize))
+                    f.write("odd_threshold_ratio {}\n".format(threshold_ratio))
+                    f.write("dict_zero 1e-{}\n".format(dict_zero))
+                    f.write("Gaussian_precalc_FFT  true\n")
+                    f.write("use_Gaussian_repeat true\n")
                 f.write("Boson_subtract_polaron_shift true\n")
                 f.write("Boson_E_min {}\n".format(0))
                 f.write("Boson_E_max {}\n".format(boson_e_max))
@@ -213,7 +226,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             f.write("set_precision {}\n".format(precision))
             f.write("use_symmetric_Trotter true\n")
             if phonons:
-                f.write("read_PT    {}\n".format(pt_file))
+                f.write("add_PT    {}\n".format(pt_file))
             # initial state
             if initial is not None:
                 f.write("initial    {{ {} }}\n".format(initial))
@@ -282,6 +295,14 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             dressed_data = np.genfromtxt(out_file+'.ds')
             dressed_result = read_result_1d(dressed_data)
             return dressed_result
+        if print_H:
+            if not verbose:
+                subprocess.check_output(["print_H",tmp_file])
+            else:
+                subprocess.check_call(["print_H",tmp_file])
+            h_data = np.genfromtxt(out_file+'.ham')
+            h_result = read_hamiltonian(h_data)
+            return h_result
         if not verbose:
             subprocess.check_output(["ACE",tmp_file])
         else:

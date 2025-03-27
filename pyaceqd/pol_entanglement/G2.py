@@ -7,12 +7,13 @@ import matplotlib.pyplot as plt
 from pyaceqd.constants import hbar
 
 class PolarizatzionEntanglement():
-    def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, verbose=False, workers=2, options={}) -> None:
+    def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, verbose=False, workers=2, remove_files=True, options={}) -> None:
         self.system = system  # system that is used for the simulation
         self.dt = dt  # timestep during simulation
         self.options = dict(options)
         self.options["dt"] = dt  # also save it in the options dict
         self.tend = tend  # timebin width
+        self.remove_files = remove_files
         self.simple_exp = simple_exp  # use exponential timestepping
         self.gaussian_t = gaussian_t  # use gaussian timestepping during pulse
         self.pulses = pulses
@@ -27,9 +28,14 @@ class PolarizatzionEntanglement():
             print("temp_dir not included in options, setting to /mnt/temp_data/")
             self.options["temp_dir"] = "/mnt/temp_data/"
             self.temp_dir = self.options["temp_dir"]
-        self.prepare_pulsefile(verbose=verbose)
-        self.options["pulse_file_x"] = self.pulse_file_x  # put pulse files in options dict
-        self.options["pulse_file_y"] = self.pulse_file_y
+
+        if "pulse_file_x" in self.options or "pulse_file_y" in self.options and self.options["pulse_file_x"] is not None and self.options["pulse_file_y"] is not None:
+            self.remove_files = False
+        else:
+            self.prepare_pulsefile(verbose=verbose)
+            self.options["pulse_file_x"] = self.pulse_file_x  # put pulse files in options dict
+            self.options["pulse_file_y"] = self.pulse_file_y
+
         self.gamma_e = options["gamma_e"]
         if time_intervals is not None:
             if len(time_intervals) != 2:
@@ -63,8 +69,9 @@ class PolarizatzionEntanglement():
         export_csv(self.pulse_file_y, _t_pulse, pulse_y.real, pulse_y.imag, precision=8, delimit=' ', verbose=verbose)
 
     def __del__(self):
-        os.remove(self.pulse_file_x)
-        os.remove(self.pulse_file_y)
+        if self.remove_files:
+            os.remove(self.pulse_file_x)
+            os.remove(self.pulse_file_y)
 
     def calc_densitymatrix(self):
         density_matrix = np.zeros([4,4], dtype=complex)
@@ -153,7 +160,7 @@ class PolarizatzionEntanglement():
         new_options = dict(self.options)
         if output_ops is not None:
             new_options["output_ops"] = output_ops
-        return self.system(0, self.tend, *self.pulses, **new_options)
+        return self.system(0, self.tend, **new_options)
     
     def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None):
         """
