@@ -4,8 +4,14 @@ import subprocess
 from pyaceqd.tools import export_csv
 import pyaceqd.constants as constants
 import time
+import sys
+# from contextlib import redirect_stdout
+# import io
 
 hbar = constants.hbar  # meV*ps
+sys.path.append(constants.pybind_path)  # path to pybinds for ACE
+from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap, hbar
+
 
 def sanity_checks(system_op,phonons,boson_op,initial,interaction_ops,verbose):
     if system_op is None and verbose:
@@ -121,7 +127,7 @@ def read_hamiltonian(data):
 def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                   multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7, \
                   system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False, \
-                  J_to_file=None, J_file=None, factor_ah=None, use_infinite=False, print_H=False):
+                  J_to_file=None, J_file=None, factor_ah=None, use_infinite=False, print_H=False, calc_dynmap=False, rho0=None):
     """
     ACE_stream: separate calculation for the process tensor, which can be used to simulate way longer time scales.
     """
@@ -203,7 +209,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             except FileNotFoundError:
                 pass
     # pulse file generation
-    t = np.arange(t_start,t_end,step=dt/10)
+    t = np.arange(t_start,t_end,step=dt/1)
     # if a specific pulse file is supplied, do not delete it after the calculation.
     # this allows re-using the pulse file, for example for multi-time correlation functions
     # where the pulse is not changed for many calculations
@@ -250,7 +256,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             if lindblad_ops is not None:
                 for _op in lindblad_ops:
                     # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
-                    f.write("add_Lindblad {:.5f}  {{ {} }}\n".format(_op[1],_op[0]))  
+                    f.write("add_Lindblad {}  {{ {} }}\n".format(_op[1],_op[0]))  
             # single modes
             if LO_params is not None:
                 for _LO_param in LO_params:
@@ -281,7 +287,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             for _op in output_ops:
                 f.write("add_Output {{ {} }}\n".format(_op))    
             f.write("outfile {}\n".format(out_file))
-         # param file is now written, start ACE
+        # param file is now written, start ACE
         if prepare_only:
             _remove_pulse_file = False
             _remove_rf_file = False
@@ -303,12 +309,34 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             h_data = np.genfromtxt(out_file+'.ham')
             h_result = read_hamiltonian(h_data)
             return h_result
-        if not verbose:
-            subprocess.check_output(["ACE",tmp_file])
+        if calc_dynmap:
+            plist = []
+            with open(tmp_file,'r') as f:
+                for line in f:
+                    plist.append(line)
+            param = Parameters(plist)
+            if rho0 is not None:
+                initial_state = InitialState(rho0)
+            else:
+                initial_state = InitialState(param)
+            
+            fprop = FreePropagator(param)
+            PT = ProcessTensors(param)
+            outp = OutputPrinter(param)
+            tgrid = TimeGrid(param)
+            sim = Simulation(param)
+            sim.run(fprop, PT, initial_state, tgrid, outp)
+            dynmap = DynamicalMap(fprop, PT, sim, tgrid)
+            _dm = np.array(dynmap.E)
+            data = np.genfromtxt(out_file, usecols=[i for i in range(1+2*len(output_ops))]) # skip_header=1)
+            result = read_result(data, len(output_ops))
         else:
-            subprocess.check_call(["ACE",tmp_file])
-        data = np.genfromtxt(out_file, usecols=[i for i in range(1+2*len(output_ops))]) # skip_header=1)
-        result = read_result(data, len(output_ops))
+            if not verbose:
+                subprocess.check_output(["ACE",tmp_file])
+            else:
+                subprocess.check_call(["ACE",tmp_file])
+            data = np.genfromtxt(out_file, usecols=[i for i in range(1+2*len(output_ops))]) # skip_header=1)
+            result = read_result(data, len(output_ops))
     finally:
         try:
             os.remove(out_file)
@@ -323,4 +351,6 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
                 os.remove(pulse_file_y)
         if _remove_rf_file:
             os.remove(rf_file)
+    if calc_dynmap:
+        return result, _dm
     return result

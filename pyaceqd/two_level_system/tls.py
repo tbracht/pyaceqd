@@ -12,9 +12,9 @@ import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
 
-def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=3.0, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
-             J_to_file=None, J_file=None, factor_ah=None, use_infinite=False, threshold=10, **options):
+             dephasing=None, J_to_file=None, J_file=None, factor_ah=None, use_infinite=True, threshold=8, calc_dynmap=False, rho0=None, **options):
     """
     t_start: time at which the simulation starts in ps
     t_end: time at which the simulation ends in ps
@@ -55,6 +55,9 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
     lindblad_ops = []
     if lindblad:
         lindblad_ops = [["|0><1|_2",gamma_e]]
+    if dephasing is not None:
+        lindblad_ops.append(["|0><0|_2-|1><1|_2", dephasing])
+        # lindblad_ops.append(["-|1><1|_2", dephasing])
     # note that the TLS uses x-polar
     interaction_ops = [["|1><0|_2","x"]]
     # rotating frame of pulse
@@ -67,7 +70,7 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=str(int(threshold)), threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
-                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite)
+                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0)
     return result
 
 def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, colors=["#0000FF", "#FF0000"], visible_states=None, return_eigenvectors=False, **options):

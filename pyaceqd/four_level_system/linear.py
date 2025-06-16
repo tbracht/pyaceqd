@@ -5,7 +5,8 @@ import pyaceqd.constants as constants
 hbar = constants.hbar  # meV*ps
 
 def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False,
+               use_infinite=False, calc_dynmap=False):
     system_prefix = "b_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = B
     if shift_x:
@@ -33,7 +34,7 @@ def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_x
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only,
-                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly)
+                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap)
     return result
 
 def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, colors=["#0000FF", "#00CC33", "#F9A627", "#FF0000"], filename="biexciton_dressed", firstonly=False, visible_states=None, return_eigenvectors=False, **options):

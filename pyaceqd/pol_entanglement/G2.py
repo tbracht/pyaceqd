@@ -7,7 +7,48 @@ import matplotlib.pyplot as plt
 from pyaceqd.constants import hbar
 
 class PolarizatzionEntanglement():
-    def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, verbose=False, workers=2, remove_files=True, options={}) -> None:
+    def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, 
+                 time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, regular_grid=False,
+                 verbose=False, workers=2, remove_files=True, factor_tau=4, options={}) -> None:
+        """
+        Parameters
+        ----------
+        system : System
+            System that is used for the simulation
+        sigma_x : str
+            Polarization operator for x
+        sigma_y : str
+            Polarization operator for y
+        sigma_xdag : str
+            Conjugate of the polarization operator for x
+        sigma_ydag : str
+            Conjugate of the polarization operator for y
+        pulses : list of Pulses
+            Pulses that are used for the simulation
+        dt : float, optional
+            Timestep during simulation
+        tend : float, optional
+            Timebin width
+        time_intervals : list of float, optional
+            Time intervals for the simulation
+        simple_exp : bool, optional
+            Use exponential timestepping
+        dt_small : float, optional
+            Small timestep for the simulation
+        gaussian_t : float, optional
+            Gaussian timestep for the simulation
+        regular_grid : bool, optional
+            If True, use a regular t-grid with spacing dt_small,
+            disregarding settings for gaussian_t and simple_exp
+        verbose : bool, optional
+            Verbose output
+        workers : int, optional
+            Number of threads spawned by ThreadPoolExecutor
+        remove_files : bool, optional
+            Remove temporary files after simulation
+        options : dict, optional
+            Additional options for the simulation
+        """
         self.system = system  # system that is used for the simulation
         self.dt = dt  # timestep during simulation
         self.options = dict(options)
@@ -37,7 +78,12 @@ class PolarizatzionEntanglement():
             self.options["pulse_file_y"] = self.pulse_file_y
 
         self.gamma_e = options["gamma_e"]
-        if time_intervals is not None:
+        
+        # make time grid
+        if regular_grid:
+            # regular grid with spacing dt_small
+            self.t1 = np.arange(0, self.tend + dt_small, dt_small)
+        elif time_intervals is not None:
             if len(time_intervals) != 2:
                 return ValueError("time_intervals must be a list of length 2")
             ts = []
@@ -52,7 +98,7 @@ class PolarizatzionEntanglement():
             # print(self.t1)
             # print(len(self.t1))
         else:
-            self.t1 = construct_t(0, self.tend, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
+            self.t1 = construct_t(0, self.tend, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp, factor_tau=factor_tau)
 
     def prepare_pulsefile(self, verbose=False):
         # 2*tb is the maximum simulation length, 0 is the start of the simulation
@@ -307,10 +353,113 @@ class PolarizatzionEntanglement():
         
         return concurrence(density_matrix/norm)
     
-    def G2_reuse(self, op1_t, op23s_ttau, op4_t):
+
+    def calc_timedep_data(self):
+        with tqdm.tqdm(total=3, leave=None) as tq:
+            # 0 XX,XX; 1 XX,XY; 2 XY,XY
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
+            t1, t2, _, _, G2_1_full = self.G2_reuse(self.axdag, op23s, self.ax, return_full_G2=True)
+            tq.update()
+            # 3 XX,YX; 4 XX,YY; 5 XY,YX; 6 XY,YY
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
+            t1, t2, _, _, G2_2_full = self.G2_reuse(self.axdag, op23s, self.ay, return_full_G2=True)
+            tq.update()
+            # 7 YX,YX; 8 YX,YY; 9 YY,YY
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
+            t1, t2, _, _, G2_3_full = self.G2_reuse(self.aydag, op23s, self.ay, return_full_G2=True)
+            tq.update()
+        return t1,t2,np.append(G2_1_full,np.append(G2_2_full,G2_3_full,axis=0),axis=0)
+
+    def calc_timedependent_rho(self, plot_G2=None, t1=None, t2=None, G2_full=None, t=None, G2_t=None, add_norm=0, mode="t", skip=0, return_G2=False):
+        if t is None or G2_t is None:
+            if t1 is None or t2 is None or G2_full is None:
+                t1,t2,G2_full = self.calc_timedep_data()
+            if mode == "t":
+                t, G2_t = self.integrate_timedep_G2(t1,t2,G2_full)
+            if mode == "tau":
+                t, G2_t = self.integrate_g2_tau(t1,t2,G2_full)
+
+        t = t[skip:]
+        G2_t = G2_t[:,skip:]
+
+        density_matrix = np.zeros([len(t),4,4], dtype=complex)
+        
+        density_matrix[:,0,0] = np.abs(G2_t[0])  # xx,xx
+        density_matrix[:,3,3] = np.abs(G2_t[9])  # yy,yy
+        density_matrix[:,1,1] = np.abs(G2_t[2])  # xy,xy
+        density_matrix[:,2,2] = np.abs(G2_t[7])  # yx,yx
+
+        density_matrix[:,0,1] = G2_t[1]  # xx,xy
+        density_matrix[:,1,0] = np.conj(density_matrix[:,0,1])
+        density_matrix[:,0,2] = G2_t[3]  # xx,yx
+        density_matrix[:,2,0] = np.conj(density_matrix[:,0,2])
+        density_matrix[:,0,3] = G2_t[4]  # xx,yy
+        density_matrix[:,3,0] = np.conj(density_matrix[:,0,3])
+
+        density_matrix[:,1,2] = G2_t[5]  # xy,yx
+        density_matrix[:,2,1] = np.conj(density_matrix[:,1,2])
+        density_matrix[:,1,3] = G2_t[6]  # xy,yy
+        density_matrix[:,3,1] = np.conj(density_matrix[:,1,3])
+
+        density_matrix[:,2,3] = G2_t[8]  # yx,yy
+        density_matrix[:,3,2] = np.conj(density_matrix[:,2,3])
+
+        _integrated_dm = np.trapz(density_matrix, t, axis=0)
+        _integrated_norm = np.trace(_integrated_dm).real
+        integrated_concurrence = concurrence(_integrated_dm/(_integrated_norm))
+
+        # add uncorrelated background
+        density_matrix[:,0,0] += add_norm
+        density_matrix[:,3,3] += add_norm
+        density_matrix[:,1,1] += add_norm
+        density_matrix[:,2,2] += add_norm
+
+        norm = np.trace(density_matrix, axis1=1, axis2=2).real
+        c_t = np.zeros_like(t)
+        for i in range(len(t)):
+            c_t[i] = concurrence(density_matrix[i]/(norm[i]))
+        if plot_G2 is not None:
+            np.savez("{}.npz".format(plot_G2), t1=t1, t2=t2, G2_full=G2_full)
+            plt.clf()
+            plt.plot(t, np.abs(G2_t[0]), label="xx,xx")
+            plt.plot(t, np.abs(G2_t[2]), label="xy,xy")
+            plt.plot(t, np.abs(G2_t[4]), label="xx,yy")
+            plt.plot(t, np.abs(G2_t[7]), dashes=[4,4],label="yx,yx")
+            plt.plot(t, np.abs(G2_t[9]), dashes=[4,4],label="yy,yy")
+            plt.xlabel("t (ps)")
+            plt.ylabel("G2(t)")
+            plt.legend()
+            plt.savefig("{}.png".format(plot_G2))
+        if return_G2:
+            return t, c_t, density_matrix, norm, _integrated_dm, integrated_concurrence, G2_t
+        return t, c_t, density_matrix, norm, _integrated_dm, integrated_concurrence
+    
+    def G2_reuse(self, op1_t, op23s_ttau, op4_t, return_full_G2=False):
         """
         re-uses the same simulation for different output operators,
         which are given in op23s_ttau
+
+        Parameters
+        ----------
+        op1_t : str
+            First operator at time t
+        op23s_ttau : list of str
+            list of operators for times t+tau
+        op4_t : str
+            fourth operator at time t
+        return_full_G2 : bool, optional
+            if true, return full G2(t,tau)
+
+        Returns
+        -------
+        t1 : ndarray
+            time axis t
+        _G2 : ndarray
+            τ integrated G2 values
+        G2_integrated : ndarray
+            t and τ integrated G2 values 
+        G2_full : ndarray, optional
+            If return_full_G2=True returns the full G2(t,tau) 
         """
         tau0_ops = []  # operators for tau=0
         for op23_ttau in op23s_ttau:
@@ -325,8 +474,13 @@ class PolarizatzionEntanglement():
         # simulation time-axis
         t2 = np.linspace(0, self.tend, n_tau + 1)
         _G2 = np.zeros([len(op23s_ttau),len(t1)], dtype=complex)
-        tend = self.tend  # always the same, note that for pol.-ent. we might want to change this
-        with tqdm.tqdm(total=len(t1), leave=None) as tq:
+        
+        if return_full_G2:
+            G2_full = np.zeros([len(op23s_ttau), len(t1), n_tau + 1], dtype=complex)
+        
+        tend = self.tend  # always the same
+        
+        with tqdm.tqdm(total=len(t1), leave=None, desc="calculating") as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
                 for i in range(len(t1)):
@@ -360,8 +514,91 @@ class PolarizatzionEntanglement():
                     # here, we want the <op2*op3>-values for every t2=t1,..,tend
                     if n_t2 > 0: 
                         temp_t2[j,1:n_t2+1] = futures[i][1+j][-n_t2:]
+                    
+                    if return_full_G2:
+                        G2_full[j, i, :n_t2+1] = temp_t2[j]
+                
                 t_new = t2[:n_t2+1]
-                # integrate over t_new
+                # integrate over t_new, i.e., over the tau axis
                 for j in range(len(op23s_ttau)):
                     _G2[j,i] = np.trapz(temp_t2[j],t_new)
-        return t1, _G2, np.trapz(_G2,t1,axis=1)
+                    
+        if return_full_G2:
+            # t1 is t axis, t2 is tau axis
+            # G2_full is the full G2(t,tau) for every operator
+            return t1, t2, _G2, np.trapz(_G2,t1,axis=1), G2_full
+        else:
+            return t1, _G2, np.trapz(_G2,t1,axis=1)
+
+    def integrate_g2_tau(self, t1, t2, G2_full):
+        """
+        Calculate tau-dependent G2 function, i.e., only integrated over t.
+        this is different to the usually returned G2 function by the G2 function, which we
+        usually first integrate over t and then over tau.
+        Thats why we need the whole G2_full still depending on t1 (t), and t2 (tau).
+        G2(τ) = ∫_0^∞ dt G(2)(t,τ)
+        """
+
+        G2_tau = np.zeros((G2_full.shape[0], len(t2)), dtype=complex)
+
+        # iterate over all tau
+        for i in tqdm.trange(len(t2),desc="t integration"):
+            G2_tau[:,i] = np.trapz(G2_full[:, :, i], t1)
+        return t2, G2_tau
+
+    #def timedep_G2(self, op1_t, op23s_ttau, op4_t):
+    def integrate_timedep_G2(self, t1, t2, G2_full):
+        """
+        Calculates time-dependent G2 function by integration:
+        G2(t) = ∫_0^t dt' ∫_0^(t-t') dτ G(2)(t',τ)
+
+        Parameters
+        ----------
+        t1: t axis
+        t2: tau axis
+        G2_full: G2(t,tau)
+
+        Returns
+        -------
+        t : ndarray
+            time axis
+        G2_t : ndarray
+            time-dependent G2 values 
+        """
+
+
+        # initialize G2(t)
+        G2_t = np.zeros((G2_full.shape[0], len(t1)), dtype=complex)
+
+        # iterate over all t
+        for i in tqdm.trange(len(t1), leave=None, desc="integrating"):
+
+            # integrate over t' from 0 to t
+            # t_idx = (t1 <= t)  # indices for t' <= t
+            t_prime = t1[:i+1] # should be same as t1[:i+1]
+            
+            # G2(t') values for the current t
+            G2_tprime = np.zeros([G2_full.shape[0],len(t_prime)], dtype=complex)
+
+            if len(t_prime) == 0:
+                print("No valid t' values for t =", t1[i])
+                continue
+                
+            # For each t' integrate over τ from 0 to (t-t')
+            for j, tp in enumerate(t_prime):
+                tau_max = t1[i] - tp
+                tau_idx = (t2 <= tau_max)  # t2 is the tau-axis
+                tau = t2[tau_idx]
+                
+                if len(tau) == 0:
+                    print("No valid τ values for t' =", tp)
+                    continue
+                    
+                # iterate over all components in the G2 function
+                #for k in range(G2_full.shape[0]):
+                    # integrate the G2 function over τ for the current t' with index j
+                G2_tprime[:,j] = np.trapz(G2_full[:,j,tau_idx], tau)
+            
+            G2_t[:,i] = np.trapz(G2_tprime, t_prime)
+        
+        return t1, G2_t
