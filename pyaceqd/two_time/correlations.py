@@ -859,10 +859,10 @@ def tl_three_op_two_time(system, t_axis, *pulses, t_mem=10, opA="|1><0|_2", opB=
     return t_axis, tau, G1
 
 
-def tl_three_op_two_time_phonons(system, s, *pulses, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=500, dt=0.1, rho0=np.array([[1,0],[0,0]],dtype=complex), options={"lindblad": True, "phonons": True}, debug=False, fortran_only=False):
+def tl_three_op_two_time_phonons(system, t_axis, *pulses, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=500, dt=0.1, rho0=np.array([[1,0],[0,0]],dtype=complex), options={"lindblad": True, "phonons": True}, debug=False, fortran_only=False):
     if not t_axis[0] == 0:
         raise ValueError("t_axis must start at 0.")
-
+    t_axis = np.round(t_axis, 6)  # round to 6 digits to avoid floating point errors
     # get matrix representation of the operators
     opA_mat = op_to_matrix(opA)
     opB_mat = op_to_matrix(opB)
@@ -931,7 +931,7 @@ def tl_three_op_two_time_phonons(system, s, *pulses, t_mem=10, opA="|1><0|_2", o
     t_axis_ges = np.linspace(0, t_ges, int(t_ges / dt) + 1)
     rho_test = np.ones((len(t_axis_ges), dim, dim), dtype=complex)
     i_rho = 1
-    i_test = 25
+    i_test = 9
     rho_test[0] = rho0.copy().reshape(dim, dim)
     t_test = t_axis[i_test]
     print(f"t_test: {t_test}, i_test: {i_test}, dms: {len(t_mem_indices)}")
@@ -946,7 +946,7 @@ def tl_three_op_two_time_phonons(system, s, *pulses, t_mem=10, opA="|1><0|_2", o
             n_steps = 0
         else:
             # we need to use t_axis[i]-t_axis[i-1] time steps to get to from t=t_axis[i-1] to t=t_axis[i]
-            n_steps = int((t) / dt) + 1
+            n_steps = int(np.round((t) / dt,6)) + 1
         # use n_steps of dms_tauc[-1,0] to propagate rho_t from t=0 to t or tauc
         # whichever is smaller
         for j in range(np.min([n_steps, n_tauc])-1):
@@ -993,67 +993,252 @@ def tl_three_op_two_time_phonons(system, s, *pulses, t_mem=10, opA="|1><0|_2", o
     # dm_tl_f = np.asfortranarray(dms_tauc.transpose(3, 4, 0, 1, 2))
     # print(np.shape(dm_tl_f))
 
+    plt.close()
     plt.clf()
-    plt.plot(result[0][:1000*int(0.1/dt)], np.abs(result[1][:1000*int(0.1/dt)]-rho_test[:1000*int(0.1/dt),0,0]), label="rho_00")
+    plt.plot(result[0][:500], (result[1][:500]-rho_test[:500,0,0]), label="rho_00")
     # plt.plot(result[0], np.abs(result[2]), label="rho_11")
     # plt.plot(t_axis_ges, np.abs(rho_test[:,0,0]), dashes=[2,2], label="rho_00_tl")
     # plt.plot(t_axis_ges, np.abs(rho_test[:,1,1]), dashes=[2,2], label="rho_11_tl")
-    # plt.xlim(18,22)
+    plt.title(f"t_test: {t_test}, i_test: {i_test}, dms: {len(t_mem_indices)}")
+    # plt.xlim(0,15)
+    plt.legend()
     plt.savefig("pyaceqd/tests/rho_tl_phonons_test.png")
 
     return t_axis, tau, G
 
+def tl_threeoptwotime_phonons_dm(system, t_axis, *pulses, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=500, dt=0.1, rho0=np.array([[1,0],[0,0]],dtype=complex), options={"lindblad": True, "phonons": True}, debug=False, fortran_only=False):
+    if not t_axis[0] == 0:
+        raise ValueError("t_axis must start at 0.")
+    t_axis = np.round(t_axis, 6)  # round to 6 digits to avoid floating point errors
+    # get matrix representation of the operators
+    opA_mat = op_to_matrix(opA)
+    opB_mat = op_to_matrix(opB)
+    opC_mat = op_to_matrix(opC)
 
-p1 = CWLaser(e0=0.08)  #
-# p1 = ChirpedPulse(tau_0=5,e_start=0,e0=5,t0=4*5)
-t_tau_max = 100
-t_axis = simple_t_gaussian(0, 1, t_tau_max, 0.1, 0.1, p1, decimals=1, exp_part=False)
-# print("t_axis", t_axis)
-t1,t2,G2 = tl_three_op_two_time_phonons(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=False, fortran_only=True)
+    # first we need to get the dynamic maps where the operators are applied 
+    # outside of the memory time
+    mto = {"operator": opC, "applyFrom": "_left", "applyBefore": "false", "time": 1.2*t_mem}
+    mto2 = {"operator": opA, "applyFrom": "_right", "applyBefore": "false", "time": 1.2*t_mem}
+    result, dm = system(0,4*t_mem, *pulses, dt=dt, rho0=rho0, multitime_op=[mto, mto2], calc_dynmap=True, **options)
+    _t = result[0].real  # time axis for getting the dynamic maps
+    
+    _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
+    dm_tl = calc_tl_dynmap_pseudo(dm, _t, debug=True)
+    tl_map, dms_separated = extract_dms(dm_tl, _t, t_mem,[1.2*t_mem])
+    tl_map2 = dm_tl[-1]  # last dynamic map, used for the second part of the calculation
+    dms_separated = np.array(dms_separated, dtype=complex)
 
-# t1,t2,G2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=True)
+    rho_test = np.ones((len(_t), 2,2), dtype=complex)
+    rho_test[0] = rho0.copy().reshape(2,2)
+    n_steps = int((1.2*t_mem) / dt) +1
+    for i in tqdm.trange(1,dms_separated[0].shape[0]):
+        rho_test[i] = (dms_separated[0,i-1] @ rho_test[i-1].reshape(2**2)).reshape(2,2)
+    for i in range(dms_separated[0].shape[0],n_steps):
+        rho_test[i] = (tl_map @ rho_test[i-1].reshape(2*2)).reshape(2,2)
+    for i in tqdm.trange(n_steps, n_steps + dms_separated[0].shape[0]):
+        rho_test[i] = (dms_separated[1,i-n_steps] @ rho_test[i-1].reshape(2**2)).reshape(2,2)
+    plt.clf()
+    plt.plot(_t, np.abs(result[1]), label="rho_00")
+    plt.plot(_t, np.abs(result[2]), label="rho_11")
+    plt.plot(_t, np.abs(rho_test[:,0,0]), dashes=[2,2], label="rho_00_tl")
+    plt.plot(_t, np.abs(rho_test[:,1,1]), dashes=[2,2], label="rho_11_tl")
+    plt.scatter(_t[:len(dms_separated[0])],[1 for _ in range(len(dms_separated[0]))], label="dms")
+    plt.legend()
+    # plt.xlim(1.1*t_mem, 1.25*t_mem)
+    plt.ylim(0,1.1)
+    plt.savefig("pyaceqd/tests/rho_tl_phonons.png")
+    n_tau = int(tau_max / dt)
+    tau = np.linspace(0, tau_max, n_tau + 1)
+    G = np.zeros((len(t_axis), len(tau)), dtype=complex)
+    dim = len(rho0[0])
 
-plt.clf()
-plt.pcolormesh(t1,t2,np.abs(G2).T,shading="gouraud")
-plt.colorbar()
-plt.xlabel("t1 (t)")
-plt.ylabel("t2, (tau)")
-plt.title("G2(t1,t2)")
-plt.savefig("pyaceqd/tests/g2_t1t2_pulsed_tl.png")
-plt.clf()
+    # check how many values of t_axis are below t_mem
+    t_mem_indices = np.where(t_axis <= t_mem)[0]
+    print(f"t_mem_indices: {t_mem_indices}")
+    # this time we use the dynamic maps
+    # instead of the time-local maps.
+    # outside the memory time, we use the time-local dynamic maps again.
+    dms_tauc = []
+    print(f"t_axis: {t_axis[t_mem_indices]}")
+    for i in t_mem_indices:
+        t = t_axis[i]
+        t_end = t + t_mem + 10*dt
+        # print(f"t: {t}, t_end: {t_end}")
+        mto = {"operator": opC, "applyFrom": "_left", "applyBefore": "false", "time": t}
+        mto2 = {"operator": opA, "applyFrom": "_right", "applyBefore": "false", "time": t}
+        result, dm = system(0, t+t_mem, *pulses, dt=dt, rho0=rho0, multitime_op=[mto, mto2], calc_dynmap=True, **options)
+        dms_tauc.append(dm.copy())
 
-# # t,tau,G2_2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=50, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=False)
+    print(len(dms_tauc), len(t_mem_indices))
 
-t1,t2,G2_2 = three_op_two_time(tls, t_axis, p1, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=True)
+    rho_t = rho0.copy().reshape(dim**2)
+    for i in t_mem_indices:
+        print(np.shape(dms_tauc[i]))
+    # n_tauc = len(dms_tauc[0,0])
+    t_ges = tau_max + t_axis[-1]
+    t_axis_ges = np.linspace(0, t_ges, int(t_ges / dt) + 1)
+    rho_test = np.ones((len(t_axis_ges), dim, dim), dtype=complex)
+    i_rho = 1
+    i_test = 9
+    rho_test[0] = rho0.copy().reshape(dim, dim)
+    t_test = t_axis[i_test]
+    print(f"t_test: {t_test}, i_test: {i_test}, dms: {len(t_mem_indices)}")
+    mto = {"operator": opC, "applyFrom": "_left", "applyBefore": "false", "time": t_test}
+    mto2 = {"operator": opA, "applyFrom": "_right", "applyBefore": "false", "time": t_test}
+    result, dm = system(0,200, *pulses, dt=dt, rho0=rho0, multitime_op=[mto, mto2], calc_dynmap=True, **options)
 
-plt.clf()
-plt.pcolormesh(t1,t2,np.abs(G2_2).T,shading="gouraud")
-plt.colorbar()
-plt.xlabel("t1 (t)")
-plt.ylabel("t2, (tau)")
-plt.title("G2(t1,t2)")
-plt.savefig("pyaceqd/tests/g2_t1t2_phonons.png")
-plt.clf()
+    # first part: everything below t_mem
+    # we use the dynamic maps to propagate the system
+    for i in tqdm.trange(len(t_mem_indices)):
+        rho_t = rho0.copy().reshape(dim**2)
+        _rho0 = rho0.copy().reshape(dim**2)
+        dm = dms_tauc[i]
+        # t_mem indices should be the same as t_axis indices up to length of t_mem_indices
+        t = t_axis[i]
+        # first the t propagation
+        if i == 0:  # special case t=0
+            n_steps = 0
+        else:
+            n_steps = int(np.round((t) / dt, 6))
+        # use n_steps of dms_tauc[-1,0] to propagate rho_t from t=0 to t
+        for j in range(n_steps):
+            rho_t = dm[j] @ _rho0
+            if i == i_test:
+                rho_test[i_rho] = rho_t.reshape(dim, dim)
+                i_rho += 1
+        G[i,0] = np.trace(opA_mat @ opB_mat @ opC_mat @ rho_t.reshape(dim,dim))
+        # now we use the steps in dm to calculate from t to t+t_mem
+        rho_t_mto = rho_t.copy()
+        n_map = dm.shape[0] - n_steps
+        n_timelocal = n_tau - n_map  # TODO: maybe theres a +1 missing or so
+        for j in range(n_map):
+            rho_t_mto = dm[j+n_steps] @ _rho0
+            if i == i_test:
+                rho_test[i_rho] = rho_t_mto.reshape(dim, dim)
+                i_rho += 1
+            G[i,j+1] = np.trace(opB_mat @ rho_t_mto.reshape(dim,dim))
+        # use time-local map for rest
+        for j in range(n_timelocal):
+            rho_t_mto = tl_map2 @ rho_t_mto
+            if i == i_test:
+                rho_test[i_rho] = rho_t_mto.reshape(dim, dim)
+                i_rho += 1
+            G[i,n_map+j+1] = np.trace(opB_mat @ rho_t_mto.reshape(dim,dim))
+    # second part: everything above t_mem
+    # we use the time-local dynamic maps to propagate the system
 
-# # t,tau,G1_2 = G1_twols(0,100,0,50,0.1,0.1,p1, gamma_e=2/100, phonons=False,coarse_t=True,simple_exp=True,gaussian_t=8*5)
-plt.pcolormesh(t1,t2,np.abs(G2_2-G2).T,shading="gouraud")
-plt.colorbar()
-plt.xlabel("t1")
-plt.ylabel("t2")
-plt.xlim(0,2)
-plt.title("G1(t1,t2)")
-plt.savefig("pyaceqd/tests/g2_t1t2.png")
-plt.clf()
+    for i in tqdm.trange(len(t_mem_indices), len(t_axis)):
+        t = t_axis[i]
+        rho_t = rho0.copy().reshape(dim**2)
+        n_steps = int(np.round((t) / dt , 6))
+        tl_1 = dms_separated[0] 
+        tl_2 = dms_separated[1]  # application of MTO and propagation to t+t_mem
+        # first use all the steps in tl_1
+        for j in range(len(tl_1)):
+            rho_t = tl_1[j] @ rho_t
+            if i == i_test:
+                rho_test[i_rho] = rho_t.reshape(dim, dim)
+                i_rho += 1
+        # use tl_map to get to t
+        if i == i_test:
+            print(f"i: {i}, t: {t}, n_steps: {n_steps}, len(tl_1): {len(tl_1)}")
+        for j in range(n_steps - len(tl_1)):
+            rho_t = tl_map @ rho_t
+            if i == i_test:
+                rho_test[i_rho] = rho_t.reshape(dim, dim)
+                i_rho += 1
+        G[i,0] = np.trace(opA_mat @ opB_mat @ opC_mat @ rho_t.reshape(dim,dim))
+        # now use all steps in tl_2 to calculate the first n_tauc values in G[i,1:]
+        rho_t_mto = rho_t.copy()
+        n_map = tl_2.shape[0]
+        n_timelocal = n_tau - n_map
+        for j in range(n_map):
+            rho_t_mto = tl_2[j] @ rho_t_mto
+            if i == i_test:
+                rho_test[i_rho] = rho_t_mto.reshape(dim, dim)
+                i_rho += 1
+            G[i,j+1] = np.trace(opB_mat @ rho_t_mto.reshape(dim,dim))
+        # use time-local map for rest
+        for j in range(n_timelocal):
+            rho_t_mto = tl_map2 @ rho_t_mto
+            if i == i_test:
+                rho_test[i_rho] = rho_t_mto.reshape(dim, dim)
+                i_rho += 1
+            G[i,n_map+j+1] = np.trace(opB_mat @ rho_t_mto.reshape(dim,dim))
 
 
-print(t2[400])
-plt.plot(t1, np.abs(G2_2[:,400])-np.abs(G2[:,400]), label="G2")
-# plt.plot(t1, np.abs(G2[:,400]), dashes=[2,2], label="G2_2")
-# plt.xlim(6.5,7)
-# plt.ylim(0,1.1)
-plt.legend()
-plt.xlabel("t")
-plt.ylabel("G2(t,0)")
-plt.title("G2(t,0)")
-plt.savefig("pyaceqd/tests/g2_t0.png")
-plt.clf()
+    plt.close()
+    plt.clf()
+    # plt.plot(result[0][:500], (result[1][:500]-rho_test[:500,0,0]), label="rho_00")
+    plt.plot(result[0], np.abs(result[2]), label="rho_11")
+    # plt.plot(t_axis_ges, np.abs(rho_test[:,0,0]), dashes=[2,2], label="rho_00_tl")
+    plt.plot(t_axis_ges, np.abs(rho_test[:,1,1]), dashes=[2,2], label="rho_11_tl")
+    plt.title(f"t_test: {t_test}, i_test: {i_test}, dms: {len(t_mem_indices)}")
+    plt.xlim(0,2)
+    plt.ylim(0,0.05)
+    plt.legend()
+    plt.savefig("pyaceqd/tests/rho_tl_phonons_test.png")
+
+    return t_axis, tau, G
+
+# p1 = CWLaser(e0=0.15)  #
+# # p1 = ChirpedPulse(tau_0=5,e_start=0,e0=5,t0=4*5)
+# t_tau_max = 100
+# t_axis = simple_t_gaussian(0, 1, t_tau_max, 0.1, 0.1, p1, decimals=1, exp_part=False)
+# # print("t_axis", t_axis)
+# # t1,t2,G2 = tl_threeoptwotime_phonons_dm(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=False, fortran_only=True)
+
+# # exit()
+# t1,t2,G2 = tl_three_op_two_time_phonons(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=False, fortran_only=True)
+# np.savez("pyaceqd/tests/g2_cw_0.15_t1t2_tl.npz", t1=t1, t2=t2, G2=G2)
+
+# # t1,t2,G2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=True)
+
+# plt.clf()
+# plt.pcolormesh(t1,t2,np.abs(G2).T,shading="gouraud")
+# plt.colorbar()
+# plt.xlabel("t1 (t)")
+# plt.ylabel("t2, (tau)")
+# plt.title("G2(t1,t2)")
+# plt.savefig("pyaceqd/tests/g2_t1t2_pulsed_tl.png")
+# plt.clf()
+
+
+# print(np.trapz(np.trapz(G2, t1, axis=0), t2))
+
+# # # t,tau,G2_2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=50, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=False)
+
+# t1,t2,G2_2 = three_op_two_time(tls, t_axis, p1, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=True)
+
+# print(np.trapz(np.trapz(G2_2, t1, axis=0), t2))
+# plt.clf()
+# plt.pcolormesh(t1,t2,np.abs(G2_2).T,shading="gouraud")
+# plt.colorbar()
+# plt.xlabel("t1 (t)")
+# plt.ylabel("t2, (tau)")
+# plt.title("G2(t1,t2)")
+# plt.savefig("pyaceqd/tests/g2_t1t2_phonons.png")
+# plt.clf()
+
+# # # t,tau,G1_2 = G1_twols(0,100,0,50,0.1,0.1,p1, gamma_e=2/100, phonons=False,coarse_t=True,simple_exp=True,gaussian_t=8*5)
+# plt.pcolormesh(t1,t2,np.abs(G2_2-G2).T,shading="gouraud")
+# plt.colorbar()
+# plt.xlabel("t1")
+# plt.ylabel("t2")
+# # plt.xlim(0,2)
+# plt.title("G1(t1,t2)")
+# plt.savefig("pyaceqd/tests/g2_t1t2.png")
+# plt.clf()
+
+
+# print(t2[400])
+# plt.plot(t1, np.abs(G2_2[:,400])-np.abs(G2[:,400]), label="G2")
+# # plt.plot(t1, np.abs(G2[:,400]), dashes=[2,2], label="G2_2")
+# # plt.xlim(6.5,7)
+# # plt.ylim(0,1.1)
+# plt.legend()
+# plt.xlabel("t")
+# plt.ylabel("G2(t,0)")
+# plt.title("G2(t,0)")
+# plt.savefig("pyaceqd/tests/g2_t0.png")
+# plt.clf()

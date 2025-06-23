@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from pyaceqd.tools import export_csv, construct_t
+from pyaceqd.tools import export_csv, construct_t, simple_t_gaussian
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
@@ -11,7 +11,8 @@ HBAR = 0.6582119514  # meV ps
 
 def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **ops):
     # pulse file generation
-    _t_pulse = np.arange(t0,tend+tauend,step=dtau)
+    _t_pulse = np.arange(t0,tend+tauend+dtau,step=dtau)
+    print(_t_pulse[0],_t_pulse[1],_t_pulse[-1])
     pulse_file = temp_dir + "tls_G1_pulse.dat"
     pulse = np.zeros_like(_t_pulse, dtype=complex)
     for _p in pulses:
@@ -26,13 +27,14 @@ def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3
     options.update(ops)
     multitime_op = {"operator": "|0><1|_2","applyFrom": "_left", "applyBefore": "false"}
     t, tau, g1 = G1_general(t0,tend,tau0,tauend,dt,dtau,*pulses,system=tls,multitime_op=multitime_op,coarse_t=coarse_t,workers=workers,prepare_only=prepare_only,simple_exp=simple_exp,gaussian_t=gaussian_t,factor_tau=factor_tau,**options)
-    os.remove(pulse_file)
+    # os.remove(pulse_file)
     return t, tau, g1
 
 def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, system=tls, multitime_op={"operator": "|0><1|_2","applyFrom": "left"}, coarse_t=False, workers=10, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **options):
     # includes tend
     t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     n_tau = int((tauend-tau0)/dtau)
+    # print("n_tau: {}, tauend: {}, tau0: {}".format(n_tau, tauend, tau0))
     tau = np.linspace(tau0, tauend, n_tau + 1)
     # on t-axis: good resolution during the pulses, less resolution after/between them
     if coarse_t:
@@ -40,7 +42,7 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
             # smaller timesteps to reduce numerical errors
             t = construct_t(t0, tend, dt, 3*dt, *pulses, factor_tau=factor_tau, simple_exp=simple_exp,gaussian_t=True)
         else:
-            t = construct_t(t0, tend, dt, 10*dt, *pulses, simple_exp=simple_exp,gaussian_t=False)
+            t = construct_t(t0, tend, dt, 10*dt, *pulses, simple_exp=simple_exp,gaussian_t=False, factor_tau=factor_tau)
     
     if options["phonons"]:
         if options["pt_file"] is None or not os.path.exists(options["pt_file"]+"_initial"):
@@ -50,7 +52,9 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
             print("using pt_file {}".format(options["pt_file"]))
         if prepare_only:
                 return 0,0,0
-
+    #t = simple_t_gaussian(0, 8*5, 50, 0.1, 1, *pulses)
+    # t = simple_t_gaussian(0, 8*5, 100, 0.1, 1, *pulses, decimals=1)
+    # print(t[0])
     _G1 = np.zeros([len(t),len(tau)],dtype=complex)
     # G1 part
     with tqdm.tqdm(total=len(t),leave=None) as tq:
