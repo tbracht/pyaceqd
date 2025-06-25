@@ -481,7 +481,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
             end if
             rho_vec = rho_res
             tmp = reshape(rho_vec, [dim, dim])
-            tmp = matmul(transpose(opB), tmp)
+            tmp = matmul(transpose(opB), tmp)  ! opB.T is applied to rho, somewhere it seems the DM is transposed.
             result(i,k) = sum([(tmp(l,l), l=1,dim)])
             j = j + 1
             if (j + j_start == n_tb + 1) then

@@ -329,7 +329,7 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
             dynmap = DynamicalMap(fprop, PT, sim, tgrid)
             _dm = np.array(dynmap.E)
             data = np.genfromtxt(out_file, usecols=[i for i in range(1+2*len(output_ops))]) # skip_header=1)
-            result = read_result(data, len(output_ops))
+            result = read_result(data, len(output_ops))  # [tgrid.get_all()]  # 
         else:
             if not verbose:
                 subprocess.check_output(["ACE",tmp_file])

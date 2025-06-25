@@ -144,8 +144,6 @@ class Indistinguishability(Purity):
         self.dm = dm
         self.tl_map = None
         self.tl_dms = None
-        self.dms_separated = None
-        self.dms_phonons = None
         self.t_mem = t_mem  # memory time for phonon dynamics with time-local maps
         self.sigma_x_mat = sigma_x_mat
         self.sigma_xdag_mat = sigma_xdag_mat
@@ -196,7 +194,7 @@ class Indistinguishability(Purity):
         # plt.savefig("G1.png")
         # plt.clf()
         # integrate over t1
-        return t2, self.t_axis_complete, _G1
+        # return t2, self.t_axis_complete, _G1
         G1 = np.trapz(np.abs(_G1)**2, t_axis_complete, axis=0)
         return t2, G1
     
@@ -425,12 +423,35 @@ class Indistinguishability(Purity):
         _, dms = extract_dms(dm_tl, _t, self.gaussian_t + self.t_mem, t_MTOs=[t_mto])
         return dms[1]  # return the second dynamic map, which is the one we need for the phonon dynamics
 
+    def get_dm2_phonons_advanced(self, mtos, t_mto, suffix=1):
+        # in principle, we don't have to calculate the tl-maps up until t_mto + t_gaussian + self.t_mem + 2*self.dt,
+        # but the correct final time depends on t_mto, as gaussian_t is absolute and t_mem is always needed. 
+        # this means the maximum final time will be t_gaussian + 2 * t_mem
+        # while t_mto is t_gaussian + t_mem, meaning before we used a maximum of 2*t_gaussian + 2*t_mem.
+        mtos_new = []
+        for mto in mtos:
+            mto_new = mto.copy()
+            mto_new["time"] = t_mto
+            mtos_new.append(mto_new)
+        t_end = self.gaussian_t + 2 * self.t_mem + 2*self.dt
+        result, dm = self.system(0, t_end, multitime_op=mtos_new, calc_dynmap=True, suffix=suffix, **self.options)
+        _t = result[0]  # time axis for getting the dynamic maps
+        _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
+        dm_tl = calc_tl_dynmap_pseudo(dm, _t)
+        # extracting the dynmaps is now a bit different, as we have to take into account the reduced
+        # number of time steps, the non-stationary 'steps' in each local map will be different:
+        # for t_mto = 0, the memory time will be t_gaussian + t_mem,
+        # for t_mto = 1, memory time = t_gaussian - 1 + t_mem, 
+        # for t_mto = t_gaussian, memory time = t_mem
+        # from then on, it is always t_mem, as this is the minimum memory time we need
+        memory_time = np.max([self.gaussian_t + self.t_mem - t_mto, self.t_mem])
+        _, dms = extract_dms(dm_tl, _t, memory_time, t_MTOs=[t_mto])
+        return dms[1]  # return the second dynamic map, which is the one we need for the phonon dynamics
+
     def G1_tl_phonons(self):
         t_apply = self.gaussian_t + self.t_mem + 5*self.dt
         _mto = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore": "false", "time": t_apply}
         tl_map, dms_sep = self.get_tl_phonons(mtos=[_mto], t_mtos=[t_apply])
-        
-        # self.dms_phonons = dms_sep
 
         dim = np.shape(self.sigma_x_mat)[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
@@ -441,10 +462,30 @@ class Indistinguishability(Purity):
         tau = np.linspace(0, tau_max, n_tau + 1)
 
         t_mem_indices = np.where(self.t1 <= (self.gaussian_t + self.t_mem))[0]
-        print(f"t_mem_indices: {t_mem_indices}, t_mem: {self.t_mem}, gaussian_t: {self.gaussian_t}")
-        print(self.t1[t_mem_indices])
+        # print(f"t_mem_indices: {t_mem_indices}, t_mem: {self.t_mem}, gaussian_t: {self.gaussian_t}")
+        # print(self.t1[t_mem_indices])
         # calc tl maps:
+        # always let the maps have the same shape as the dms_sep[0], which is computed using a memory time of
+        # self.gaussian_t + self.t_mem.
+        # In principle, the shape of the time-dependent dynamical maps is a little smaller,
+        # but we need to pass a 'nice' array to fortran. We just fill the rest with
+        # the time-local map.  
         dms_tauc2 = np.zeros((len(t_mem_indices), *np.shape(dms_sep[0])), dtype=complex)
+        dms_tauc2[:,:] = tl_map
+
+        with tqdm.tqdm(total=len(t_mem_indices), leave=None) as tq:
+            futures = []
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                for i in range(len(t_mem_indices)):
+                    _t_mto = self.t1[i]
+                    _e = executor.submit(self.get_dm2_phonons_advanced,[_mto], _t_mto, i)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+            wait(futures)
+            for i in range(len(t_mem_indices)):
+                dm_part = futures[i].result()
+                _len_part = np.shape(dm_part)[0]
+                dms_tauc2[i,:_len_part] = dm_part
 
         
         # for i in tqdm.trange(len(t_mem_indices)):
@@ -462,19 +503,19 @@ class Indistinguishability(Purity):
             # _, dms = extract_dms(dm_tl, _t, self.gaussian_t+self.t_mem, t_MTOs=[_t_mto])
             # dms_tauc2[i] = dms[1]
 
-        with tqdm.tqdm(total=len(t_mem_indices), leave=None) as tq:
-            futures = []
-            with ThreadPoolExecutor(max_workers=self.workers) as executor:
-                for i in range(len(t_mem_indices)):
-                    _t_mto = self.t1[i]
-                    _e = executor.submit(self.get_dm2_phonons,[_mto], _t_mto, i)
-                    _e.add_done_callback(lambda f: tq.update())
-                    futures.append(_e)
-            wait(futures)
-            for i in range(len(t_mem_indices)):
-                dms_tauc2[i] = futures[i].result()
+        # with tqdm.tqdm(total=len(t_mem_indices), leave=None) as tq:
+        #     futures = []
+        #     with ThreadPoolExecutor(max_workers=self.workers) as executor:
+        #         for i in range(len(t_mem_indices)):
+        #             _t_mto = self.t1[i]
+        #             _e = executor.submit(self.get_dm2_phonons,[_mto], _t_mto, i)
+        #             _e.add_done_callback(lambda f: tq.update())
+        #             futures.append(_e)
+        #     wait(futures)
+        #     for i in range(len(t_mem_indices)):
+        #         dms_tauc2[i] = futures[i].result()
 
-        print("dms_tauc shape:", dms_tauc2.shape)
+        # print("dms_tauc shape:", dms_tauc2.shape)
         dm_taucs2 = np.asfortranarray(dms_tauc2.transpose(2, 3, 0, 1))
         dm_separated1 = np.asfortranarray(dms_sep[0].transpose(1, 2, 0))
         dm_separated2 = np.asfortranarray(dms_sep[1].transpose(1, 2, 0))
@@ -489,17 +530,16 @@ class Indistinguishability(Purity):
         opB_mat = self.sigma_xdag_mat
         opC_mat = self.sigma_x_mat
 
-        print("operators:")
-        print(opA_mat)
-        print(opB_mat)
-        print(opC_mat)
+        # print("operators:")
+        # print(opA_mat)
+        # print(opB_mat)
+        # print(opC_mat)
 
-        print(opB_mat@opC_mat)
+        # print(opB_mat@opC_mat)
 
         G1 = propagate_tau_module.calc_twotime_phonon_block(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
                                                             rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,
                                                             dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
-        
         # i = 40
         # results = np.zeros((len(tau)), dtype=complex)
         # j = 0
@@ -546,8 +586,6 @@ class Indistinguishability(Purity):
         _mto = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore": "false", "time": t_apply}
         _mto2 = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore": "false", "time": t_apply}
         tl_map, dms_sep = self.get_tl_phonons(mtos=[_mto,_mto2], t_mtos=[t_apply])
-        
-        # self.dms_phonons = dms_sep
 
         dim = np.shape(self.sigma_x_mat)[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
@@ -558,43 +596,36 @@ class Indistinguishability(Purity):
         tau = np.linspace(0, tau_max, n_tau + 1)
 
         t_mem_indices = np.where(self.t1 <= (self.gaussian_t + self.t_mem))[0]
-        # print(f"t_mem_indices: {t_mem_indices}, t_mem: {self.t_mem}, gaussian_t: {self.gaussian_t}")
-        # print(self.t1[t_mem_indices])
         # calc tl maps:
         dms_tauc2 = np.zeros((len(t_mem_indices), *np.shape(dms_sep[0])), dtype=complex)
-        
+        dms_tauc2[:,:] = tl_map
+
         with tqdm.tqdm(total=len(t_mem_indices), leave=None) as tq:
             futures = []
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 for i in range(len(t_mem_indices)):
                     _t_mto = self.t1[i]
-                    _e = executor.submit(self.get_dm2_phonons,[_mto, _mto2], _t_mto, i)
+                    _e = executor.submit(self.get_dm2_phonons_advanced,[_mto, _mto2], _t_mto, i)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
             wait(futures)
             for i in range(len(t_mem_indices)):
-                dms_tauc2[i] = futures[i].result()
-
+                dm_part = futures[i].result()
+                _len_part = np.shape(dm_part)[0]
+                dms_tauc2[i,:_len_part] = dm_part
+        
         # with tqdm.tqdm(total=len(t_mem_indices), leave=None) as tq:
         #     futures = []
         #     with ThreadPoolExecutor(max_workers=self.workers) as executor:
         #         for i in range(len(t_mem_indices)):
         #             _t_mto = self.t1[i]
-        #             mto = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore": "false", "time": _t_mto}
-        #             mto2 = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore": "false", "time": _t_mto}
-        #             _e = executor.submit(self.system, 0, _t_mto + self.gaussian_t+self.t_mem+2*self.dt, multitime_op=[mto,mto2], calc_dynmap=True, suffix=i, **self.options)
+        #             _e = executor.submit(self.get_dm2_phonons,[_mto, _mto2], _t_mto, i)
         #             _e.add_done_callback(lambda f: tq.update())
         #             futures.append(_e)
         #     wait(futures)
         #     for i in range(len(t_mem_indices)):
-        #         result, dm = futures[i].result()
-        #         _t = result[0]
-        #         _t = np.round(_t, 6)
-        #         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
-        #         _, dms = extract_dms(dm_tl, _t, self.gaussian_t+self.t_mem, t_MTOs=[self.t1[i]])
-        #         dms_tauc2[i] = dms[1]
+        #         dms_tauc2[i] = futures[i].result()
 
-        # print("dms_tauc shape:", dms_tauc2.shape)
         dm_taucs2 = np.asfortranarray(dms_tauc2.transpose(2, 3, 0, 1))
         dm_separated1 = np.asfortranarray(dms_sep[0].transpose(1, 2, 0))
         dm_separated2 = np.asfortranarray(dms_sep[1].transpose(1, 2, 0))
@@ -908,9 +939,14 @@ class Indistinguishability(Purity):
 # plt.ylabel("G1")
 # plt.savefig("g1_train2.png")
 
+
+# options = {"verbose": False, "gamma_e": 1/100, "lindblad": True,
+#  "temp_dir": '/mnt/temp_data/', "phonons": False}
 # dtaus = 0.5
 # tau_max = 20
 # tau_min = 2
+# sigma_x = op_to_matrix("|0><1|_2")
+# sigma_xdag = op_to_matrix("|1><0|_2")
 # n_tau = int((tau_max-tau_min)/dtaus)
 # taus = np.linspace(tau_min, tau_max, n_tau + 1)
 # indists = np.zeros(len(taus))
