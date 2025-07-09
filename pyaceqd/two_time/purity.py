@@ -364,17 +364,19 @@ class Indistinguishability(Purity):
         dms = np.array(dms, dtype=complex)
         return tl_map, dms
 
-    def calc_timedynamics_tl_phonons(self, output_ops=None):
+    def calc_timedynamics_tl_phonons(self):
         tl_map, dms = self.get_tl_phonons(mtos=[], t_mtos=[])
         dm_sep1 = dms[0]
 
         factors = self.factor_t + self.factor_tau
         len_tb = int(self.tb/self.dt)
         t_total = np.linspace(0, factors*self.tb, factors*len_tb + 1)
-        rho0 = np.array([[1, 0], [0, 0]], dtype=complex)
-        rho_t = np.ones((len(t_total), 4), dtype=complex)
-        rho_t[0] = rho0.reshape(4)  # initial state, rho0 = |0><0|
-        rho_t[-1] = rho0.reshape(4)  # final state, rho0 = |0><0|
+        rho0 = np.zeros((self.dim,self.dim), dtype=complex)
+        rho0[0,0] = 1  # initial state, rho0 = |0><0|
+        # rho0 = np.array([[1, 0], [0, 0]], dtype=complex)
+        rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
+        rho_t[0] = rho0.reshape(self.dim**2)  # initial state, rho0 = |0><0|
+        rho_t[-1] = rho0.reshape(self.dim**2)  # final state, rho0 = |0><0|
         for j in range(factors):
             # from 0 to len_tb-1, we have the pulses
             # do this in each time bin
@@ -383,7 +385,7 @@ class Indistinguishability(Purity):
             # now apply the time-local dynamical map
             for i in range(len(dm_sep1),len_tb+1):
                 rho_t[i+j*len_tb] = np.dot(tl_map, rho_t[i-1+j*len_tb])
-        return t_total, rho_t.reshape((len(t_total), 2, 2))
+        return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))
 
     def calc_timedynamics_tl(self):
         if self.tl_map is None:
@@ -392,11 +394,12 @@ class Indistinguishability(Purity):
         factors = self.factor_t + self.factor_tau
         len_tb = int(self.tb/self.dt)
         t_total = np.linspace(0, factors*self.tb, factors*len_tb + 1)
-        rho0 = np.array([[1, 0], [0, 0]], dtype=complex)
-        rho_t = np.ones((len(t_total), 4), dtype=complex)
-        rho_t[0] = rho0.reshape(4)  # initial state, rho0 = |0><0|
-        rho_t[-1] = rho0.reshape(4)  # final state, rho0 = |0><0|
-        self.tl_complete = np.zeros((len(t_total)-1, 4, 4), dtype=complex)
+        rho0 = np.zeros((self.dim,self.dim), dtype=complex)
+        rho0[0,0] = 1  # initial state, rho0 = |0><0|
+        rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
+        rho_t[0] = rho0.reshape(self.dim**2)  # initial state, rho0 = |0><0|
+        rho_t[-1] = rho0.reshape(self.dim**2)  # final state, rho0 = |0><0|
+        self.tl_complete = np.zeros((len(t_total)-1, self.dim**2, self.dim**2), dtype=complex)
         for j in range(factors):
             # from 0 to len_tb-1, we have the pulses
             # do this in each time bin
@@ -408,7 +411,7 @@ class Indistinguishability(Purity):
             for i in range(len(self.tl_dms),len_tb+1):
                 rho_t[i+j*len_tb] = np.dot(self.tl_map, rho_t[i-1+j*len_tb])
                 self.tl_complete[i+j*len_tb-1] = self.tl_map
-        return t_total, rho_t.reshape((len(t_total), 2, 2))  
+        return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))  
     
     def get_dm2_phonons(self, mtos, t_mto, suffix=1):
         mtos_new = []

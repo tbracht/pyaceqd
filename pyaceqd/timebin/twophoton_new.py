@@ -12,7 +12,7 @@ options_example = {"verbose": False, "delta_xd": 4, "gamma_e": 1/65, "lindblad":
  "temp_dir": '/mnt/temp_data/', "phonons": False, "pt_file": "tls_dark_3.0nm_4k_th10_tmem20.48_dt0.02.ptr"}
 
 class TwoPhotonTimebinNew(TimeBin):
-    def __init__(self, system, sigma_x, sigma_xdag, sigma_b, sigma_bdag, *pulses, dt=0.02, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, options={}) -> None:
+    def __init__(self, system, sigma_x, sigma_xdag, sigma_b, sigma_bdag, *pulses, dt=0.02, tb=800, dt_small=0.1, dt_exp=None, simple_exp=True, gaussian_t=None, verbose=False, workers=15, options={}) -> None:
         super().__init__(system, *pulses, dt=dt, tb=tb, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, options=options)
         # prepare the operators used in output/multitime
         self.gamma_e = options["gamma_e"]
@@ -20,10 +20,14 @@ class TwoPhotonTimebinNew(TimeBin):
         if self.gaussian_t is not None:
             self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,10*dt_small,*self.pulses,decimals=1)
         else:
-            self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp)
+            self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, dt_exp, *self.pulses, simple_exp=self.simple_exp)
 
-    def calc_timedynamics(self):
-        return self.system(0, 2*self.tb, *self.pulses, **self.options)
+    def calc_timedynamics(self, output_ops=None):
+        opts_new = self.options.copy()
+        if output_ops is not None:
+            opts_new["output_ops"] = output_ops
+        
+        return self.system(0, 2*self.tb, *self.pulses, **opts_new)
 
 
     def calc_densitymatrix(self, save_dm=False, save_all=False, filename="densitymatrix", verbose=False, reduced=False, use_second_zero=False):

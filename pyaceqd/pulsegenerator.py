@@ -41,6 +41,8 @@ class PulseGenerator:
 
         self.time = np.arange(self.t0,self.tend+self.dt,self.dt)
         self.frequencies = -np.fft.fftshift(np.fft.fftfreq(len(self.time),d=self.dt)) # carefull negative for rotating frame 
+        self.df = np.abs(self.frequencies[0]-self.frequencies[1])
+        self.angular_frequencies = 2*np.pi*self.frequencies
         self.energies = 2*np.pi*hbar*self.frequencies
         self.central_frequency = 299792.458/self.central_wavelength
         self.central_energy = 299792.458/self.central_wavelength*hbar*2*np.pi
@@ -993,7 +995,7 @@ class PulseGenerator:
                     rho_label = str(i)
                 else:
                     rho_label=sim_label[i]
-                ax_2.plot(time_sim,np.abs(sim_input[i+1]),label=rho_label)
+                ax_2.plot(np.real(time_sim),np.abs(sim_input[i+1]),label=rho_label)
             ax_2.legend(loc = 'upper right')
             ax_2.set_ylim([-0.01,1.01])
         
@@ -1063,6 +1065,63 @@ class PulseGenerator:
         if save:
             fig.savefig(save_dir+save_name+'_frequ.png')
             
+    def wigner_plot(self,time_0 = None, time_end = None, frequ_0 = None, frequ_end = None):
+        field_x, field_y = self.generate_field_functions(interpolation = 'linear') 
+
+        wigner_x = np.zeros((len(self.time),len(self.time)),dtype=complex)
+        wigner_y = np.zeros((len(self.time),len(self.time)),dtype=complex)
+        def wigner_integrand_x(tau,time,frequ):
+                    return field_x(time+tau/2)*np.conj(field_x(time-tau/2))*np.exp(1j*2*np.pi*frequ*tau)
+        def wigner_integrand_y(tau,time,frequ):
+            return field_y(time+tau/2)*np.conj(field_y(time-tau/2))*np.exp(1j*2*np.pi*frequ*tau)
+        for i, time in enumerate(self.time):
+            for j, frequ in enumerate(self.frequencies):    
+                wigner_x[i,j] = np.trapz(wigner_integrand_x(self.time,time,frequ),x=self.time)
+                wigner_y[i,j] = np.trapz(wigner_integrand_y(self.time,time,frequ),x=self.time)
+
+        self.wigner_x = wigner_x
+        self.wigner_y = wigner_y        
+        print('wigner power:')
+        print(np.trapz(np.trapz(np.real(wigner_x),x=self.time,axis=0),x = -self.frequencies,axis=0) + np.trapz(np.trapz(np.real(wigner_y),x=self.time,axis=0),x = -self.frequencies,axis=0))
+
+        # test_int =  2*np.trapz(np.real(wigner_x),x=-self.frequencies,axis=1) 
+        # #test_int /= np.max(test_int)
+
+        # test_int_2 = np.abs(self.temporal_representation_x)**2 
+        # #test_int_2 /= np.max(test_int_2)
+        # plt.figure()
+        # plt.plot(self.time,test_int, label='wigner')
+        # plt.plot(self.time,test_int_2,'--',label='pulse')
+        # plt.xlim([0,50])
+        # plt.legend()
+
+        plt.figure()
+        plt.pcolormesh(self.frequencies,self.time,np.real(wigner_x))
+        plt.colorbar()
+        plt.title('Wigner function x')
+        plt.xlabel('frequency / THz')
+        plt.ylabel('time / ps')
+
+        plt.figure()
+        plt.pcolormesh(self.frequencies,self.time,np.real(wigner_y))
+        plt.colorbar()
+        plt.title('Wigner function y')
+        plt.xlabel('frequency / THz')
+        plt.ylabel('time / ps')
+        
+        pass
+
+    # def wigner_fct(self,time,frequ):
+    #     field_x, field_y = self.generate_field_functions()
+        
+    #     def wigner_integrand_x(tau):
+    #         return field_x(time+tau/2)*np.conj(field_x(time-tau/2))*np.exp(1j*2*np.pi*frequ*time)
+    #     def wigner_integrand_y(tau):
+    #         return field_y(time+tau/2)*np.conj(field_y(time-tau/2))*np.exp(1j*2*np.pi*frequ*time)
+
+    #     wigner_x = integrate.quad(wigner_integrand_x,self.t0,self.tend)
+    #     wigner_y = integrate.quad(wigner_integrand_y,self.t0,self.tend)
+    #     return wigner_x[0], wigner_y[0]
 
     def generate_pulsefiles(self, temp_dir = '', file_name = 'pulse_time', suffix = '',abs_only = False, precision = 8):
         #Translating the generated pulse for use with the PYACEQD Quantum Dot simulation enviroment 
@@ -1090,10 +1149,10 @@ class PulseGenerator:
 
         return phase_file_x, phase_file_y
 
-    def generate_field_functions(self):
+    def generate_field_functions(self, interpolation = 'linear'):
         #generate a function that can be used by qutip (ect) and interpolates accordingly 
-        field_x = interpolate.interp1d(self.time, self.temporal_representation_x, kind='linear', fill_value=0,bounds_error=False)
-        field_y = interpolate.interp1d(self.time, self.temporal_representation_y, kind='linear', fill_value=0,bounds_error=False)
+        field_x = interpolate.interp1d(self.time, self.temporal_representation_x, kind=interpolation, fill_value=0,bounds_error=False)
+        field_y = interpolate.interp1d(self.time, self.temporal_representation_y, kind=interpolation, fill_value=0,bounds_error=False)
         # def field_function_x(t):
         #     return field_x(t)
         # def field_function_y(t):

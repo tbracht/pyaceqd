@@ -23,12 +23,21 @@ def select_equally_spaced_colors(n):
     
     return colors
 
-def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, print_states=None, **options):
+def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, print_states=None, no_pulse=False, **options):
     options["output_ops"] = output_ops_dm(dim)
     # firstonly is not used when calculating the density matrix, only for the composition of the dressed states
+    # rho is the density matrix that is later transformed
     _,rho = compose_dm(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
     options["dressedstates"] = True
     options["firstonly"] = firstonly
+    if no_pulse:
+        # the 'no_pulse' option can be used if the underlying
+        # system is not in its eigenstates, e.g., if an external 
+        # magnetic field is applied in the hamiltonian.
+        # Then, only the hamiltonian without the pulses is used for
+        # the diagonalization.
+        pulses = []
+    # data is used to calculate the dressed states
     data = system(t_start, t_end, *pulses, **options)
     if colors is None:
         colors = select_equally_spaced_colors(n=np.prod(dim))

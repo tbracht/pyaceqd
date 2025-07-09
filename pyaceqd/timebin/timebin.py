@@ -19,9 +19,13 @@ class TimeBin():
             print("temp_dir not included in options, setting to /mnt/temp_data/")
             self.options["temp_dir"] = "/mnt/temp_data/"
             self.temp_dir = self.options["temp_dir"]
-        self.prepare_pulsefile(verbose=verbose, t_simul=t_simul)
-        self.options["pulse_file_x"] = self.pulse_file_x  # put pulse files in options dict
-        self.options["pulse_file_y"] = self.pulse_file_y
+        if not "pulse_file_x" in self.options or not "pulse_file_y" in self.options or self.options["pulse_file_x"] is None and self.options["pulse_file_y"] is None:
+            self.prepare_pulsefile(verbose=verbose, t_simul=t_simul)
+            self.options["pulse_file_x"] = self.pulse_file_x  # put pulse files in options dict
+            self.options["pulse_file_y"] = self.pulse_file_y
+        else:
+            self.pulse_file_x = self.options["pulse_file_x"]
+            self.pulse_file_y = self.options["pulse_file_y"]
 
     def prepare_pulsefile(self, verbose=False, t_simul=None):
         # 2*tb is the maximum simulation length, 0 is the start of the simulation

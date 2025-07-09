@@ -40,11 +40,13 @@ def get_gaussian_t(t0,tend,*pulses,dt_max=1.0,dt_min=0.01,interval_per_step=0.05
             interval_contains = 0
     return np.array(t_array)
 
-def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simple_exp=False, gaussian_t=False):
+def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, dt_exp=None, *pulses, factor_tau=4, simple_exp=False, gaussian_t=False):
     """
     constructs t-axis that has dt_small discretization during the pulses and dt_big otherwise.
     standard factor is 4, i.e., -4*tau_pulse,..,4*tau_pulse
     """
+    if dt_exp is None:
+        dt_exp = dt_small
     # put t0 and tau in arrays to sort them
     t0s = []
     taus = []
@@ -86,7 +88,7 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, *pulses, factor_tau=4, simpl
             ts.append(t_gaussian)
         else:
             ts.append(np.arange(intervals[0][0],intervals[0][1],dt_small))
-        _exp_part = np.exp(np.arange(np.log(intervals[0][1]),np.log(tend),dt_small))
+        _exp_part = np.exp(np.arange(np.log(intervals[0][1]),np.log(tend),dt_exp))
         # make sure that there are no crazy numbers, round the exponentially spaced part to 2 decimals. somehow this seems to work best
         # even better than rounding to the step-size dt_small
         ts.append(np.round(_exp_part))
@@ -288,7 +290,7 @@ def op_to_matrix(op):
 # print(op_to_matrix("(|0><1|_2)"))  # Example usage, should return a 2x2 matrix with the appropriate values
 
 def read_calibration_file(calibration_file):
-
+    
     # reads in experimentally aquired quantum dot parameters 
     config = configparser.ConfigParser()
     config.read(calibration_file)
@@ -303,7 +305,7 @@ def read_calibration_file(calibration_file):
 
     lifetime_exciton = float(config['LIFETIMES']['exciton']) #ps
     lifetime_biexciton = float(config['LIFETIMES']['biexciton'])
-    lifetime_dark = float(config['LIFETIMES']['dark']) 
+    #lifetime_dark = float(config['LIFETIMES']['dark']) 
 
     g_ex = float(config['G_FACTORS']['g_ex'])
     g_hx = float(config['G_FACTORS']['g_hx'])
@@ -317,13 +319,17 @@ def read_calibration_file(calibration_file):
     exciton_x_energy = fss_bright/2
     exciton_y_energy = -fss_bright/2
     binding_energy = -(exciton_meV - biexciton_meV) # negatively defined
-    dark_energy = (exciton_meV - dark_meV)
+    dark_energy = (dark_meV - exciton_meV)
     dark_x_energy = dark_energy + fss_dark/2
     dark_y_energy = dark_energy - fss_dark/2 
 
     gamma_e = 1/lifetime_exciton
     gamma_b = 1/(lifetime_biexciton*2)
-    gamma_d = 0  # 1/lifetime_dark
+    gamma_d = 0 #1/lifetime_dark
+
+    return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
+
+
 
     return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
 
@@ -349,6 +355,77 @@ def resample(x, y, z, s_x, s_y):
             y_new[j] = y[int(j*s_y)]
             z_new[j,i] = z[int(j*s_y),int(i*s_x)]
     return x_new, y_new, z_new
+
+def rotate_basis(rho, U_rot):
+    """
+    Rotates the basis of a density matrix rho using a unitary transformation U_rot:
+
+    $\\rho_{rotated} = U_{rot} @ \\rho @ U_{rot}^\\dagger$
+
+    It can for example be used if the system includes a magnetic field, which leads to mixing of the basis states.
+    Then, the transformation matrix U_rot can be calculated from the eigenvectors of the Hamiltonian.
+    These can, for example, be calculated using the ```dressed_states``` functions.
+    For the six-level system:
+    ```
+    t, _,_,_,_,_, e_vectors, rho = sixls_linear_dressed_states(0, 1, p1, lindblad=True, bx=bx, return_eigenvectors=True)
+    rho_rotated = rotate_basis(rho, e_vectors[0])
+    ```
+
+
+    Args:
+        rho (np.ndarray): Density matrix to be rotated.
+        U_rot (np.ndarray): Unitary transformation matrix.
+        
+    Returns:
+        np.ndarray: Rotated density matrix.
+    """
+    return U_rot @ rho @ U_rot.conj().T
+
+
+# def trunc_svd_inv(A, lam=1e-8):
+#     U, s, Vh = np.linalg.svd(A, full_matrices=False)
+#     s_reg = s / (s**2 + lam)
+#     return Vh.T @ np.diag(s_reg) @ U.T.conj() @ B
+
+
+
+# def truncated_svd_inv(A, lam=1e-8):
+#     """
+#     Computes the pseudo-inverse of a matrix using truncated SVD.
+    
+#     Args:
+#         A (np.ndarray): Input matrix to be inverted.
+#         lam (float): Regularization parameter to avoid division by zero.
+        
+#     Returns:
+#         np.ndarray: Pseudo-inverse of the input matrix A.
+#     """
+#     u,s,vh = np.linalg.svd(A)
+#     print("SVD singular values:", s)
+#     A_inv = np.zeros_like(A)
+#     for i in range(len(s)):
+#         if s[i] > lam:
+#             A_inv += (1/s[i]) * np.outer(vh[i,:], u[:,i])
+#     return A_inv
+
+# a = np.array([[1, 2,3,4], [3, 4,5,6],[1, 2,5,4],[1, 2,5,4.00000001]], dtype=complex)
+# a_inv = np.linalg.inv(a)
+# print("Inverse of a:\n", a_inv)
+
+# # u,s,vh = np.linalg.svd(a)
+
+# # a_rec = np.zeros_like(a,dtype=float)
+# # for i in range(len(s)):
+# #     a_rec += s[i] * np.outer(u[:,i], vh[i,:])
+# # a_inv_svd = np.zeros_like(a,dtype=float)
+# # for i in range(len(s)):
+# #     a_inv_svd += 1/s[i] * np.outer(vh[i,:], u[:,i])
+
+# # print("Reconstructed a from SVD:\n", a_rec)
+# print("Inverse of a using SVD:\n", truncated_svd_inv(a, lam=1e-12))
+
+# print(a@a_inv)
+# print(a@truncated_svd_inv(a, lam=1e-18))
 
 def calc_tl_dynmap_pseudo(dm, times, debug=False):
     """
@@ -379,7 +456,11 @@ def calc_tl_dynmap_pseudo(dm, times, debug=False):
     _dm_tl[0] = dm[0]
     for i in range(1,len(_dm_tl)):
         try:
-            _dm_tl[i] = np.dot(dm[i],np.linalg.inv(dm[i-1]))
+            # _c = np.linalg.cond(dm[i])
+            # if _c > 1e6:
+            #_dm_tl[i] = np.dot(dm[i],truncated_svd_inv(dm[i-1], lam=1e-10))
+            # else:
+            _dm_tl[i] = np.dot(dm[i],np.linalg.pinv(dm[i-1],rcond=1e-12))
         except np.linalg.LinAlgError:
             _dm_tl[i] = np.dot(dm[i],np.linalg.pinv(dm[i-1]))
             if debug:
@@ -434,6 +515,11 @@ def extract_dms(dm, times, tau_c, t_MTOs):
     # dm_2 = dm[i_tmto:i_tmto+len_tauc]
     # extract the time-local dynamical map
     tl_map = dm[i_timelocal]
+    # with np.printoptions(precision=4, suppress=True):
+    #     print(dm[i_tmtos[0]-2])
+    #     print(dm[i_tmtos[0]-1])
+    #     print(dm[i_tmtos[0]])
+    #     print(dm[i_tmtos[0]+1])
     return tl_map, tl_dms
 
 def check_tl_map_params(tl_map, rho0):

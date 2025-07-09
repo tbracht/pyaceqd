@@ -1185,14 +1185,14 @@ def tl_threeoptwotime_phonons_dm(system, t_axis, *pulses, t_mem=10, opA="|1><0|_
 # # p1 = ChirpedPulse(tau_0=5,e_start=0,e0=5,t0=4*5)
 # t_tau_max = 100
 # t_axis = simple_t_gaussian(0, 1, t_tau_max, 0.1, 0.1, p1, decimals=1, exp_part=False)
-# # print("t_axis", t_axis)
-# # t1,t2,G2 = tl_threeoptwotime_phonons_dm(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=False, fortran_only=True)
+# # # print("t_axis", t_axis)
+# # # t1,t2,G2 = tl_threeoptwotime_phonons_dm(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=False, fortran_only=True)
 
-# # exit()
+# # # exit()
 # t1,t2,G2 = tl_three_op_two_time_phonons(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=False, fortran_only=True)
-# np.savez("pyaceqd/tests/g2_cw_0.15_t1t2_tl.npz", t1=t1, t2=t2, G2=G2)
+# # np.savez("pyaceqd/tests/g2_cw_0.15_t1t2_tl.npz", t1=t1, t2=t2, G2=G2)
 
-# # t1,t2,G2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=True)
+# # # t1,t2,G2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=True)
 
 # plt.clf()
 # plt.pcolormesh(t1,t2,np.abs(G2).T,shading="gouraud")
@@ -1206,7 +1206,7 @@ def tl_threeoptwotime_phonons_dm(system, t_axis, *pulses, t_mem=10, opA="|1><0|_
 
 # print(np.trapz(np.trapz(G2, t1, axis=0), t2))
 
-# # # t,tau,G2_2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=50, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=False)
+# t,tau,G2_2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=50, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=False)
 
 # t1,t2,G2_2 = three_op_two_time(tls, t_axis, p1, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=True)
 
