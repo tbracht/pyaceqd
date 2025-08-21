@@ -12,13 +12,17 @@ from pyaceqd.timebin.timebin import TimeBin
 from pyaceqd.pulses import PulseTrain, ChirpedPulse
 from pyaceqd.two_level_system.tls import tls
 from pyaceqd.two_time.correlations import tl_two_op_two_time, tl_three_op_two_time
-import propagate_tau_module
+try:
+    from pyaceqd.two_time import propagate_tau_module
+except ImportError:
+    print("WARNING: propagate_tau_module not found, using pure python implementation for G2 and G1 calculations.")
+    propagate_tau_module = None
 import time
 # import warnings
 # warnings.filterwarnings('error', category=np.ComplexWarning)
 
 class Purity(TimeBin):
-    def __init__(self, system, sigma_x, sigma_xdag, *pulses, dt=0.1, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}, factor_t=1, factor_tau=2) -> None:
+    def __init__(self, system, sigma_x, sigma_xdag, *pulses, dt=0.1, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}, factor_t=1, factor_tau=2, dt_big=None, add_tend=True) -> None:
         pulse = PulseTrain(tb, 5, *pulses)
         self.factor_t = factor_t
         self.factor_tau = factor_tau
@@ -32,8 +36,11 @@ class Purity(TimeBin):
             print("gamma_e not included in options, setting to 100")
             self.options["gamma_e"] = 100
             self.gamma_e = self.options["gamma_e"]
+        if dt_big is None:
+                dt_big = 10*dt_small
         if self.gaussian_t is not None:
-            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,10*dt_small,*pulses,decimals=1,exp_part=self.simple_exp)
+            
+            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,dt_big,*pulses,decimals=1,exp_part=self.simple_exp,add_tend=add_tend)
             # _t = np.concatenate((_t,self.tb-_t))
             # sort and remove duplicates
             # _t = np.sort(np.unique(_t))
@@ -43,7 +50,7 @@ class Purity(TimeBin):
             # plt.savefig("t1.png")
             # plt.clf()
         else:
-            self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, *pulses, simple_exp=self.simple_exp)
+            self.t1 = construct_t(0, self.tb, dt_small, dt_big, *pulses, simple_exp=self.simple_exp, add_tend=add_tend)
         # complete t-axis, when t1 is repeated for factor_t > 1
         t_axis_complete = np.array([])
         for i in range(factor_t):
@@ -123,10 +130,59 @@ class Purity(TimeBin):
                     _G2[j+i*len(t1),1:] = np.abs(futures[j][1][-(n_tau):])
                     # special case tau=0:
                     _G2[j+i*len(t1),0] = np.abs(futures[j][2][-(n_tau+1)])
-        # integrate over t1
-        G2 = np.trapz(_G2, t_axis_complete, axis=0)
         if return_whole:
             return t1, t2, _G2
+        # integrate over t1
+        G2 = np.trapezoid(_G2, t_axis_complete, axis=0)
+        return t2, G2
+    
+    def G2_modified(self, out_op1, return_whole=False):
+        """
+        Modified version where the output operator for the correlation can be specified,
+        i.e. the B in the usually calculated <A(t)*B(t+tau)*C(t)>, with usually 
+        A = sigma_xdag, B = sigma_xdag*sigma_x, C = sigma_x.
+        Here, we can choose a different B if we, for example,
+        want to calculate the G2 function for coupling of systems to two two-level sensors.
+
+        """
+        sigma_left = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
+        sigma_right = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
+        
+        # out_op1 = self.sigma_xdag + "*" + self.sigma_x
+        out_op_tau0 = self.sigma_xdag + "*" + out_op1 + "*" + self.sigma_x
+        output_ops = [out_op1, out_op_tau0]
+        t1 = self.t1
+        factor_t = self.factor_t
+        t_axis_complete = self.t_axis_complete
+        factor_tau = self.factor_tau
+        n_tau = factor_tau*int(self.tb/self.dt)
+        t2 = np.linspace(0, factor_tau*self.tb, n_tau + 1)
+        _G2 = np.zeros([factor_t*len(t1), len(t2)])
+        with tqdm.tqdm(total=factor_t*len(t1), leave=None) as tq:
+            for i in range(factor_t):
+                with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                    futures = []
+                    for j in range(len(t1)):
+                        tend = i*self.tb + t1[j] + factor_tau*self.tb
+                        sigma_X_new = dict(sigma_left)
+                        sigma_Xdag_new = dict(sigma_right)
+                        sigma_X_new["time"] = i*self.tb + t1[j]
+                        sigma_Xdag_new["time"] = i*self.tb + t1[ j]
+                        multitime_ops = [sigma_X_new, sigma_Xdag_new]
+                        _e = executor.submit(self.system, 0, tend, multitime_op=multitime_ops, suffix=j, output_ops=output_ops, **self.options)
+                        _e.add_done_callback(lambda f: tq.update())
+                        futures.append(_e)
+                    wait(futures)
+                for j in range(len(t1)):
+                    futures[j] = futures[j].result()
+                for j in range(len(t1)):
+                    _G2[j+i*len(t1),1:] = np.abs(futures[j][1][-(n_tau):])
+                    # special case tau=0:
+                    _G2[j+i*len(t1),0] = np.abs(futures[j][2][-(n_tau+1)])
+        if return_whole:
+            return t1, t2, _G2
+        # integrate over t1
+        G2 = np.trapezoid(_G2, t_axis_complete, axis=0)
         return t2, G2
     
     def calc_purity(self):
@@ -139,7 +195,7 @@ class Purity(TimeBin):
         return 1-G21/G22
 
 class Indistinguishability(Purity):
-    def __init__(self, system, sigma_x, sigma_xdag, *pulses, dt=0.1, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}, dm=False, sigma_x_mat=None, sigma_xdag_mat=None, t_mem=10) -> None:
+    def __init__(self, system, sigma_x, sigma_xdag, *pulses, dt=0.1, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}, dm=False, sigma_x_mat=None, sigma_xdag_mat=None, t_mem=10, dt_big=None, add_tend=True) -> None:
         self.pulses = pulses
         self.dm = dm
         self.tl_map = None
@@ -152,7 +208,7 @@ class Indistinguishability(Purity):
             self.sigma_x_mat = op_to_matrix(sigma_x)
             self.sigma_xdag_mat = op_to_matrix(sigma_xdag)
         self.dim = self.sigma_x_mat.shape[0]  # dimension of the Hilbert space
-        super().__init__(system, sigma_x, sigma_xdag, *pulses, dt=dt, tb=tb, dt_small=dt_small, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, t_simul=t_simul, options=options)
+        super().__init__(system, sigma_x, sigma_xdag, *pulses, dt=dt, tb=tb, dt_small=dt_small, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, t_simul=t_simul, options=options, dt_big=dt_big, add_tend=add_tend)
 
     def G1(self):
         sigma_x = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
@@ -599,6 +655,10 @@ class Indistinguishability(Purity):
         tau = np.linspace(0, tau_max, n_tau + 1)
 
         t_mem_indices = np.where(self.t1 <= (self.gaussian_t + self.t_mem))[0]
+        # print(self.t1[t_mem_indices])
+        # exit()
+        # print(f"t_mem_indices: {t_mem_indices}, t_mem: {self.t_mem}, gaussian_t: {self.gaussian_t}")
+
         # calc tl maps:
         dms_tauc2 = np.zeros((len(t_mem_indices), *np.shape(dms_sep[0])), dtype=complex)
         dms_tauc2[:,:] = tl_map
@@ -630,8 +690,8 @@ class Indistinguishability(Purity):
         #         dms_tauc2[i] = futures[i].result()
 
         dm_taucs2 = np.asfortranarray(dms_tauc2.transpose(2, 3, 0, 1))
-        dm_separated1 = np.asfortranarray(dms_sep[0].transpose(1, 2, 0))
-        dm_separated2 = np.asfortranarray(dms_sep[1].transpose(1, 2, 0))
+        dm_separated1 = np.asfortranarray(dms_sep[0].transpose(1, 2, 0))  # dm from t=0 to t=t_mem
+        dm_separated2 = np.asfortranarray(dms_sep[1].transpose(1, 2, 0))  # dm from t_apply to t_apply + t_mem
         dm_s = tl_map
 
         _tend = self.t_axis_complete[-1] + tau_max

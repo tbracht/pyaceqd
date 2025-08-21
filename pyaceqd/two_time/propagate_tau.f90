@@ -393,7 +393,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
     integer :: j, i, k, l
     complex(8) :: rho_vec(dim*dim), rho_res(dim*dim)
     complex(8) :: rho_mtx(dim, dim), tmp(dim, dim)
-    complex(8) :: rho_temp(dim*dim)
+    ! complex(8) :: rho_temp(dim*dim)
     real(8) :: time_round(n_tfull), time_sparse_round(n_t)
 
     complex(8) :: rho_buffer(dim*dim, n_t)

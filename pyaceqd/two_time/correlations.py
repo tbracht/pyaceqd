@@ -10,7 +10,11 @@ from pyaceqd.general_system.general_system import generate_pulsefiles
 from functools import reduce
 import cProfile
 import pstats
-import propagate_tau_module
+try:
+    from pyaceqd.two_time import propagate_tau_module
+except ImportError:
+    print("WARNING: propagate_tau_module not found, using pure python implementation for G2 and G1 calculations.")
+    propagate_tau_module = None
 import time
 
 """

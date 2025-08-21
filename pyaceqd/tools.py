@@ -2,6 +2,9 @@ import numpy as np
 import itertools
 import configparser 
 import re
+from functools import wraps
+from typing import Optional
+import matplotlib.pyplot as plt
 
 def _merge_intervals(intervals):
     """
@@ -40,7 +43,7 @@ def get_gaussian_t(t0,tend,*pulses,dt_max=1.0,dt_min=0.01,interval_per_step=0.05
             interval_contains = 0
     return np.array(t_array)
 
-def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, dt_exp=None, *pulses, factor_tau=4, simple_exp=False, gaussian_t=False):
+def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, dt_exp=None, *pulses, factor_tau=4, simple_exp=False, gaussian_t=False, add_tend=True):
     """
     constructs t-axis that has dt_small discretization during the pulses and dt_big otherwise.
     standard factor is 4, i.e., -4*tau_pulse,..,4*tau_pulse
@@ -99,10 +102,11 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, dt_exp=None, *pulses, factor
             ts.append(np.arange(intervals[i-1][1],intervals[i][0],dt_big))
         ts.append(np.arange(intervals[i][0],intervals[i][1],dt_small))
     ts.append(np.arange(intervals[-1][1],tend,dt_big))
-    ts.append(np.array([tend]))
+    if add_tend:
+        ts.append(np.array([tend]))
     return np.concatenate(ts,axis=0)
 
-def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2, exp_part=True):
+def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2, exp_part=True, add_tend=True):
     """
     uses gaussian timespacing from t0,...,texp, then exponential timespacing from
     texp,...,tend
@@ -115,7 +119,8 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimal
         ts.append(t_exp)
     else:
         ts.append(np.arange(texp,tend,10*dt_small))
-    ts.append(np.array([tend]))
+    if add_tend:
+        ts.append(np.array([tend]))
     return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
 
 def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
@@ -651,3 +656,153 @@ def use_tl_map_mto(tl_map, dm_1, dm_2, times, rho0, t_MTO, debug=False):
     for i in range(i_mto+len(dm_2),len(times)-1):
         rho[i+1] = np.dot(tl_map,rho[i])
     return rho.reshape(len(times),n,n)
+
+def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25, check_against_i=None):
+    norms_tl = np.zeros((len(times)-3),dtype=float)
+    for i in range(len(times)-3):
+        if check_against_i is not None:
+            norms_tl[i] = np.linalg.norm(tl_map[i]-tl_map[check_against_i])
+        else:
+            norms_tl[i] = np.linalg.norm(tl_map[i]-tl_map[i+1])
+    # relevant indices: 
+    ix = np.where((times-times[0] > 0) & (times-times[0] < xlim))[0]
+    plt.clf()
+    plt.xlabel("Time")
+    plt.ylabel("Norm")
+    plt.title("difference of adjacent dynamical maps")
+    # plt.plot(times[1:-2]-times[0], norms_tl)
+    plt.plot(times[ix]-times[0], norms_tl[ix])
+    # plt.legend(loc="upper right")
+    # plt.xlim(1000,1150)
+    # plt.ylim(0.8*np.min(norms_tl),1.2*np.max(norms_tl))
+    plt.yscale('log')
+    plt.xlim(0,xlim)
+    plt.savefig(filename+"_diff.png")
+    plt.clf()
+
+    norms_tl = np.zeros((len(tl_map)),dtype=float)
+    for i in range(len(tl_map)):
+        norms_tl[i] = np.linalg.norm(tl_map[i])
+
+    plt.clf()
+    plt.xlabel("Time")
+    plt.ylabel("Norm")
+    plt.title("Norm of dynamical maps")
+    plt.plot(times[ix]-times[0], norms_tl[ix])
+    plt.yscale('log')
+    plt.tight_layout()
+    plt.xlim(0,xlim)
+    plt.savefig(filename+"_norms.png")
+    plt.clf()
+
+    # calculate singular values of the dynamical maps
+    sv_tl = np.zeros((len(tl_map),len(tl_map[0])),dtype=float)
+    for i in range(len(tl_map)):
+        sv_tl[i] = np.linalg.svd(tl_map[i], compute_uv=False)
+    plt.clf()
+    plt.xlabel("Time")
+    plt.ylabel("Singular values")
+    plt.title("Singular values of dynamical maps")
+    for i in range(len(sv_tl[0])):
+        plt.plot(times[ix]-times[0], sv_tl[ix,i], label=f"sv {i+1}")
+    # plt.legend(loc="upper right")
+    plt.yscale('log')
+    # plt.tight_layout()
+    plt.ylim(1e-30,1e2)
+    plt.xlim(0,xlim)
+    plt.savefig(filename+"_sv.png")
+
+def nm_to_mev(lambda_light):
+    _HBAR = 0.6582119514  # meV ps
+    _c_light = 299.792e3  # nm/ps
+    return _HBAR * 2*np.pi*_c_light / lambda_light
+
+def mev_to_nm(energy_light):
+    _HBAR = 0.6582119514  # meV ps
+    _c_light = 299.792e3  # nm/ps
+    return _HBAR * 2*np.pi*_c_light / energy_light
+
+def ghz_to_mev(ghz):
+    """
+    Convert frequency in GHz to energy in meV.
+    
+    Parameters:
+    ghz (float): Frequency in GHz.
+    
+    Returns:
+    float: Energy in meV.
+    """
+    h = 2*np.pi * 0.6582119514  
+    return ghz * h * 1e-3  # Convert GHz to meV using hbar
+
+def mev_to_ghz(mev):
+    """
+    Convert energy in meV to frequency in GHz.
+    
+    Parameters:
+    mev (float): Energy in meV.
+    
+    Returns:
+    float: Frequency in GHz.
+    """
+    h = 2*np.pi * 0.6582119514
+    return mev / (h * 1e-3)  # Convert meV to GHz using hbar
+
+def with_filename(func):
+    @wraps(func)
+    def wrapper(
+        start: float = 0.1,
+        stop: float = 12,
+        num: int = 101,
+        nth: int = 10,
+        get_inverse: bool = False,
+        round_to: int = 8,
+        filename: Optional[str] = None
+    ):
+        result = func(start, stop, num, nth, get_inverse, round_to)
+        if filename is not None:
+            suffix = "_inverse" if get_inverse else "_sparse"
+            return result, filename + suffix
+        return result
+    return wrapper
+
+@with_filename
+def get_sparse_range(start=0.1, stop=12, num=101, nth=10, get_inverse=False,round_to=8):
+    range_full = np.linspace(start, stop, num)
+    range_sparse = range_full[::nth]
+    if get_inverse:
+        # returns range_full without the values in range_sparse
+        # use sets: contain only unique values
+        range_sparse_set = set(range_sparse)
+        range_full_set = set(range_full)
+        range_inverse = range_full_set - range_sparse_set  # set difference
+        # range_inverse = [x for x in range_full if x not in range_sparse_set]
+        return np.round(sorted(range_inverse),round_to)
+    return range_sparse
+
+def get_union(arr_x1, arr_x2, arr_z1, arr_z2, axis_z=None):
+    # Get the union of arr_x1 and arr_x2 and sort the result.
+    # array_z is the array of z values corresponding to arr_x1 and arr_x2
+    # so array_z should also be sorted according to the union of arr_x1 and arr_x2.
+    len_x1 = len(arr_x1)
+    len_x2 = len(arr_x2)
+    shape_z1 = arr_z1.shape
+    shape_z2 = arr_z2.shape
+    if len(shape_z1) == 1:
+        arr_z1 = arr_z1.reshape((len_x1, 1))
+    if len(shape_z2) == 1:
+        arr_z2 = arr_z2.reshape((len_x2, 1))
+    if axis_z is None:
+        if shape_z1[0] == shape_z1[1]:
+            return ValueError("Cannot determine axis for z arrays.")
+        if shape_z1[0] == len_x1 and shape_z2[0] == len_x2:
+            axis_z = 0
+        elif shape_z1[1] == len_x1 and shape_z2[1] == len_x2:
+            axis_z = 1
+        else:
+            raise ValueError("Cannot determine axis for z arrays.")
+    arr_x = np.concatenate((arr_x1, arr_x2))
+    arr_z = np.concatenate((arr_z1, arr_z2), axis=axis_z)
+    arr_x, indices = np.unique(arr_x, return_index=True)
+    arr_z = arr_z[indices]
+    return arr_x, arr_z

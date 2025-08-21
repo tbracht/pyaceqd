@@ -14,7 +14,7 @@ hbar = constants.hbar  # meV*ps
 
 def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
-             dephasing=None, J_to_file=None, J_file=None, factor_ah=None, use_infinite=True, threshold=8, calc_dynmap=False, rho0=None, **options):
+             dephasing=None, J_to_file=None, J_file=None, factor_ah=None, use_infinite=True, threshold=8, calc_dynmap=False, rho0=None, e_x=0, get_M_t=None, **options):
     """
     t_start: time at which the simulation starts in ps
     t_end: time at which the simulation ends in ps
@@ -50,6 +50,8 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
     """
     system_prefix = "tls"
     system_op = None
+    if e_x != 0:
+        system_op = ["({}*|1><1|_2)".format(e_x)]
     boson_op = "{:.3f}*|1><1|_2".format(phonon_factor)
     initial = "|0><0|_2"
     lindblad_ops = []
@@ -70,7 +72,7 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=str(int(threshold)), threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
-                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0)
+                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0,get_M_t=get_M_t)
     return result
 
 def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, colors=["#0000FF", "#FF0000"], visible_states=None, return_eigenvectors=False, **options):
@@ -83,8 +85,8 @@ def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=Non
     dim = 2
     return dressed_states(tls, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
 
-def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, temperature=1,verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
-         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], initial=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, use_infinite=False):
+def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, temperature=1, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], initial=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, calc_dynmap=False, use_infinite=False, get_M_t=None):
     system_prefix = "tls_two_sensor"
     system_op = []
     boson_op = "|1><1|_2 otimes Id_2 otimes Id_2"
@@ -117,7 +119,40 @@ def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
-                  firstonly=firstonly, use_infinite=use_infinite)
+                  firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap, get_M_t=get_M_t)
+    return result
+
+def tls_one_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, epsilon=0.0001, linewidth1=0.01, temperature=1, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2","|1><1|_2 otimes Id_2"], initial=None, dressedstates=False, 
+         rf=False, rf_file=None, firstonly=False, calc_dynmap=False, use_infinite=False, get_M_t=None):
+    system_prefix = "tls_one_sensor"
+    system_op = []
+    boson_op = "|1><1|_2 otimes Id_2"
+    if initial is None:
+        initial = "|0><0|_2 otimes |0><0|_2"
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2 otimes Id_2",gamma_e]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_2 otimes Id_2 ","x"]]
+    # rotating frame of pulse
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_2 otimes Id_2"
+
+    # sensor hamiltonian
+    system_op.append("{} * (Id_2 otimes |1><1|_2 )".format(delta_s1))
+    # sensor coupling
+    system_op.append("{} * (|1><0|_2 otimes |0><1|_2 + |0><1|_2 otimes |1><0|_2)".format(epsilon))
+    # sensor loss
+    lindblad_ops.append(["Id_2 otimes |0><1|_2", linewidth1])
+
+    # multitime: for ex. ["|1><0|_2",0,"left"] applies |1><0|_2 at t=0 from the left
+    # invoke_dict = {"dt": dt, "phonons": phonons, "generate_pt": generate_pt, "t_mem": t_mem, "ae": ae, "temperature": temperature}
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
+                  firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap, get_M_t=get_M_t)
     return result
 
 def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, cav_coupl2=None, cav_loss2=None, delta_cx2=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
@@ -174,3 +209,140 @@ def tls_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e
     n2 = options["n_phot2"] + 1
     dim = [2,n1,n2]
     return dressed_states(tls_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=None, visible_states=visible_states,print_states=print_states, **options)
+
+def tls_photon(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, n_phot1=2, laser_cav_coupl=None, pulse_file_x=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None, use_infinite=True, calc_dynmap=False, rho0=None, **options):
+    n1 = n_phot1 + 1
+    system_prefix = "tls_cavity"
+    system_op = []
+    boson_op = "|1><1|_2 otimes Id_{}".format(n1)
+    if initial is None:
+        initial = "|0><0|_2 otimes |0><0|_{} ".format(n1)
+    if output_ops is None:
+        output_ops=["|0><0|_2 otimes Id_{}".format(n1),"|1><1|_2 otimes Id_{} ".format(n1)]
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2 otimes Id_{}".format(n1), gamma_e]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_2 otimes Id_{}".format(n1),"x"]]
+    if laser_cav_coupl is not None:
+        interaction_ops.append(["{}*(Id_2 otimes bdagger_{})".format(laser_cav_coupl,n1),"x"])
+    # rotating frame of pulse
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_2 otimes Id_{} ".format(n1)
+        rf_op = rf_op + " + Id_2 otimes n_{} ".format(n1)
+        if pulse_file_x is not None and rf_file is None:
+            print("Error: pulse file is given, but no file for rotating frame")
+            return 0
+
+    # cavity detuning
+    system_op.append(" {} * (Id_2 otimes n_{})".format(delta_cx1, n1))
+    # cavity coupling
+    system_op.append(" {} * (|1><0|_2 otimes b_{} + |0><1|_2 otimes bdagger_{})".format(cav_coupl1, n1, n1))
+    # cavity loss
+    lindblad_ops.append(["Id_2 otimes b_{}".format(n1), cav_loss1])
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, pulse_file_x=pulse_file_x, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
+                  firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0)
+    return result
+
+def tls_photon_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, delta_s1=0, epsilon=0.0001, linewidth1=0.01,  t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, n_phot1=2, laser_cav_coupl=None, pulse_file_x=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None, use_infinite=True,**options):
+    n1 = n_phot1 + 1
+    system_prefix = "tls_cavity_sensor"
+    system_op = []
+    boson_op = "|1><1|_2 otimes Id_{} otimes Id_2".format(n1)
+    if initial is None:
+        initial = "|0><0|_2 otimes |0><0|_{} otimes |0><0|_2".format(n1)
+    if output_ops is None:
+        output_ops=["|0><0|_2 otimes Id_{} otimes Id_2".format(n1),"|1><1|_2 otimes Id_{} otimes Id_2".format(n1)]
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2 otimes Id_{} otimes Id_2".format(n1), gamma_e]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_2 otimes Id_{} otimes Id_2".format(n1),"x"]]
+    if laser_cav_coupl is not None:
+        interaction_ops.append(["{}*(Id_2 otimes bdagger_{} otimes Id_2)".format(laser_cav_coupl,n1),"x"])
+    # rotating frame of pulse  # untested for sensor stuff
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_2 otimes Id_{}  otimes Id_2".format(n1)
+        rf_op = rf_op + " + Id_2 otimes n_{}  otimes Id_2".format(n1)
+        if pulse_file_x is not None and rf_file is None:
+            print("Error: pulse file is given, but no file for rotating frame")
+            return 0
+
+    # cavity detuning
+    system_op.append(" {} * (Id_2 otimes n_{} otimes Id_2)".format(delta_cx1, n1))
+    # cavity coupling
+    system_op.append(" {} * (|1><0|_2 otimes b_{} otimes Id_2+ |0><1|_2 otimes bdagger_{} otimes Id_2)".format(cav_coupl1, n1, n1))
+    # cavity loss
+    lindblad_ops.append(["Id_2 otimes b_{} otimes Id_2".format(n1), cav_loss1])
+
+    # sensor hamiltonian
+    system_op.append("{} * (Id_2 otimes Id_{} otimes |1><1|_2)".format(delta_s1, n1))
+    # sensor coupling
+    system_op.append("{} * (Id_2 otimes bdagger_{} otimes |0><1|_2 + Id_2 otimes b_{} otimes |1><0|_2)".format(epsilon, n1, n1))
+    # sensor loss
+    lindblad_ops.append(["Id_2 otimes Id_{} otimes |0><1|_2".format(n1), linewidth1])
+
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, pulse_file_x=pulse_file_x, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
+                  firstonly=firstonly, use_infinite=use_infinite)
+    return result
+
+def tls_photon_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, delta_s1=0, delta_s2=None, epsilon=0.0001, linewidth1=0.01, linewidth2=None, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+         multitime_op=None, n_phot1=2, laser_cav_coupl=None, pulse_file_x=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None, use_infinite=True, **options):
+    n1 = n_phot1 + 1
+    if delta_s2 is None:
+        delta_s2 = delta_s1  # for two sensors, we use the same cavity detuning if not specified
+    if linewidth2 is None:
+        linewidth2 = linewidth1
+    system_prefix = "tls_cavity_two_sensor"
+    system_op = []
+    boson_op = "|1><1|_2 otimes Id_{} otimes Id_2 otimes Id_2".format(n1)
+    if initial is None:
+        initial = "|0><0|_2 otimes |0><0|_{} otimes |0><0|_2 otimes |0><0|_2".format(n1)
+    if output_ops is None:
+        output_ops=["|0><0|_2 otimes Id_{} otimes Id_2 otimes Id_2".format(n1),"|1><1|_2 otimes Id_{} otimes Id_2 otimes Id_2".format(n1)]
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2 otimes Id_{} otimes Id_2 otimes Id_2".format(n1), gamma_e]]
+    # note that the TLS uses x-polar
+    interaction_ops = [["|1><0|_2 otimes Id_{} otimes Id_2 otimes Id_2".format(n1),"x"]]
+    if laser_cav_coupl is not None:
+        interaction_ops.append(["{}*(Id_2 otimes bdagger_{} otimes Id_2 otimes Id_2)".format(laser_cav_coupl,n1),"x"])
+    # rotating frame of pulse  # untested for sensor stuff
+    rf_op = None
+    if rf:
+        rf_op = "|1><1|_2 otimes Id_{}  otimes Id_2 otimes Id_2".format(n1)
+        rf_op = rf_op + " + Id_2 otimes n_{}  otimes Id_2 otimes Id_2".format(n1)
+        if pulse_file_x is not None and rf_file is None:
+            print("Error: pulse file is given, but no file for rotating frame")
+            return 0
+
+    # cavity detuning
+    system_op.append(" {} * (Id_2 otimes n_{} otimes Id_2 otimes Id_2)".format(delta_cx1, n1))
+    # cavity coupling
+    system_op.append(" {} * (|1><0|_2 otimes b_{} otimes Id_2 otimes Id_2+ |0><1|_2 otimes bdagger_{} otimes Id_2 otimes Id_2)".format(cav_coupl1, n1, n1))
+    # cavity loss
+    lindblad_ops.append(["Id_2 otimes b_{} otimes Id_2 otimes Id_2".format(n1), cav_loss1])
+
+    # sensor hamiltonian
+    system_op.append("{} * (Id_2 otimes Id_{} otimes |1><1|_2 otimes Id_2)".format(delta_s1, n1))
+    system_op.append("{} * (Id_2 otimes Id_{} otimes Id_2 otimes |1><1|_2)".format(delta_s2, n1))
+    # sensor coupling
+    system_op.append("{} * (Id_2 otimes bdagger_{} otimes |0><1|_2 otimes Id_2 + Id_2 otimes b_{} otimes |1><0|_2 otimes Id_2)".format(epsilon, n1, n1))
+    system_op.append("{} * (Id_2 otimes bdagger_{} otimes Id_2 otimes |0><1|_2 + Id_2 otimes b_{} otimes Id_2 otimes |1><0|_2)".format(epsilon, n1, n1))
+    # sensor loss
+    lindblad_ops.append(["Id_2 otimes Id_{} otimes |0><1|_2 otimes Id_2".format(n1), linewidth1])
+    lindblad_ops.append(["Id_2 otimes Id_{} otimes Id_2 otimes |0><1|_2".format(n1), linewidth2])
+
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, pulse_file_x=pulse_file_x, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
+                  firstonly=firstonly, use_infinite=use_infinite)
+    return result

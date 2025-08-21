@@ -27,7 +27,7 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
 
 def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, gamma_d=0, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_6","|1><1|_6","|2><2|_6","|3><3|_6","|4><4|_6","|5><5|_6"], initial="|0><0|_6", t_mem=20.48, output_dm=False, dressedstates=False, rf=False, rf_file=None,
-         firstonly=False,calibration_file=None, print_H=False):
+         firstonly=False,calibration_file=None, print_H=False, use_infinite=True):
     system_prefix = "sixls_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = S = Dx, |4> = F = Dy, |5> = B
     if calibration_file is not None:
@@ -66,7 +66,7 @@ def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamm
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=t_mem, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, 
-                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly, print_H=print_H)
+                  dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file, firstonly=firstonly, print_H=print_H, use_infinite=use_infinite)
     if output_dm:
         return compose_dm(result, dim=6)
     return result
