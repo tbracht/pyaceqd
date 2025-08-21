@@ -95,7 +95,7 @@ class Purity(TimeBin):
         t_end = (self.factor_t + self.factor_tau + 1)*self.tb
         return self.system(0, t_end, *self.pulses, **new_options)
 
-    def G2(self, return_whole=False):
+    def G2(self, return_whole=False, tqdm_options={}):
         sigma_left = {"operator": self.sigma_x, "applyFrom": "_left", "applyBefore":"false"}
         sigma_right = {"operator": self.sigma_xdag, "applyFrom": "_right", "applyBefore":"false"}
         
@@ -109,7 +109,7 @@ class Purity(TimeBin):
         n_tau = factor_tau*int(self.tb/self.dt)
         t2 = np.linspace(0, factor_tau*self.tb, n_tau + 1)
         _G2 = np.zeros([factor_t*len(t1), len(t2)])
-        with tqdm.tqdm(total=factor_t*len(t1), leave=None) as tq:
+        with tqdm.tqdm(total=factor_t*len(t1), leave=None, **tqdm_options) as tq:
             for i in range(factor_t):
                 with ThreadPoolExecutor(max_workers=self.workers) as executor:
                     futures = []
@@ -136,7 +136,7 @@ class Purity(TimeBin):
         G2 = np.trapezoid(_G2, t_axis_complete, axis=0)
         return t2, G2
     
-    def G2_modified(self, out_op1, return_whole=False):
+    def G2_modified(self, out_op1, return_whole=False, tqdm_options={}):
         """
         Modified version where the output operator for the correlation can be specified,
         i.e. the B in the usually calculated <A(t)*B(t+tau)*C(t)>, with usually 
@@ -158,7 +158,7 @@ class Purity(TimeBin):
         n_tau = factor_tau*int(self.tb/self.dt)
         t2 = np.linspace(0, factor_tau*self.tb, n_tau + 1)
         _G2 = np.zeros([factor_t*len(t1), len(t2)])
-        with tqdm.tqdm(total=factor_t*len(t1), leave=None) as tq:
+        with tqdm.tqdm(total=factor_t*len(t1), leave=None, **tqdm_options) as tq:
             for i in range(factor_t):
                 with ThreadPoolExecutor(max_workers=self.workers) as executor:
                     futures = []
