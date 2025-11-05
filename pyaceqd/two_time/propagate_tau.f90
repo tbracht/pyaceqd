@@ -252,7 +252,7 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
         tmp = matmul(opA, tmp)
         result(i,1) = sum([(tmp(l,l), l=1,dim)])
         ! write(*,*) "tau = 0, time = ", time_sparse_round(i), " result(1) = ", rho_vec(4)
-        ! Step 4: apply opB to rho_t and vectorize again
+        ! Step 4: apply opC and opA to rho_t and vectorize again
         tmp = matmul(opC, rho_mtx)
         tmp = matmul(tmp, opA)
         rho_res = reshape(tmp, [dim*dim])
@@ -278,7 +278,7 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
             !call zgemv('N', dim*dim, dim*dim, (1.0d0,0.0d0), dm_tl(:,:,j-2+k), dim*dim, &
             !    rho_res, 1, (0.0d0,0.0d0), rho_temp, 1)
                 tmp = reshape(rho_temp, [dim, dim])
-                tmp = matmul(opB, tmp)
+                tmp = matmul(opB, tmp)  ! opB is applied and the result is stored
                 result(i,k) = sum([(tmp(l,l), l=1,dim)])
                 rho_res = rho_temp
                 j = j + 1

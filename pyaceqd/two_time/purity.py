@@ -88,11 +88,12 @@ class Purity(TimeBin):
             plt.savefig("pulsetrain.png")
             plt.clf()
 
-    def calc_timedynamics(self, output_ops=None):
+    def calc_timedynamics(self, output_ops=None, t_end=None):
         new_options = dict(self.options)
         if output_ops is not None:
             new_options["output_ops"] = output_ops
-        t_end = (self.factor_t + self.factor_tau + 1)*self.tb
+        if t_end is None:
+            t_end = (self.factor_t + self.factor_tau + 1)*self.tb
         return self.system(0, t_end, *self.pulses, **new_options)
 
     def G2(self, return_whole=False, tqdm_options={}):
@@ -667,7 +668,7 @@ class Indistinguishability(Purity):
             futures = []
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 for i in range(len(t_mem_indices)):
-                    _t_mto = self.t1[i]
+                    _t_mto = np.round(self.t1[i],6)
                     _e = executor.submit(self.get_dm2_phonons_advanced,[_mto, _mto2], _t_mto, i)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
@@ -706,7 +707,7 @@ class Indistinguishability(Purity):
         G2 = propagate_tau_module.calc_twotime_phonon_block(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
                                                             rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,
                                                             dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
-        g2 = np.trapz(np.abs(G2), self.t_axis_complete, axis=0)
+        g2 = np.trapezoid(np.abs(G2), self.t_axis_complete, axis=0)
         return tau, g2
 
     def G2_tl(self):

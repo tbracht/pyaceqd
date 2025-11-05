@@ -1,26 +1,29 @@
 import re
 import numpy as np
 import matplotlib.pyplot as plt
-from pyaceqd.tools import construct_t, simple_t_gaussian, concurrence
+from pyaceqd.tools import construct_t, simple_t_gaussian, concurrence, calc_tl_dynmap_pseudo, op_to_matrix
 from pyaceqd.timebin.timebin import TimeBin
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
 import os
+from pyaceqd.timebin import timebin_tl
+import time
 
 # exemplary options-dict:
 options_example = {"verbose": False, "delta_xd": 4, "gamma_e": 1/65, "lindblad": True,
  "temp_dir": '/mnt/temp_data/', "phonons": False, "pt_file": "tls_dark_3.0nm_4k_th10_tmem20.48_dt0.02.ptr"}
 
 class TwoPhotonTimebinNew(TimeBin):
-    def __init__(self, system, sigma_x, sigma_xdag, sigma_b, sigma_bdag, *pulses, dt=0.02, tb=800, dt_small=0.1, dt_exp=None, simple_exp=True, gaussian_t=None, verbose=False, workers=15, options={}) -> None:
+    def __init__(self, system, sigma_x, sigma_xdag, sigma_b, sigma_bdag, *pulses, dt=0.02, dim=5, tb=800, dt_small=0.1, n_tbig=10, dt_exp=None, simple_exp=True, gaussian_t=None, verbose=False, workers=15, simple_t=False, options={}) -> None:
         super().__init__(system, *pulses, dt=dt, tb=tb, simple_exp=simple_exp, gaussian_t=gaussian_t, verbose=verbose, workers=workers, options=options)
         # prepare the operators used in output/multitime
         self.gamma_e = options["gamma_e"]
+        self.dim = dim
         self.prepare_operators(sigma_x=sigma_x, sigma_xdag=sigma_xdag, sigma_b=sigma_b, sigma_bdag=sigma_bdag, verbose=verbose)
         if self.gaussian_t is not None:
-            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,10*dt_small,*self.pulses,decimals=1)
-        else:
-            self.t1 = construct_t(0, self.tb, dt_small, 10*dt_small, dt_exp, *self.pulses, simple_exp=self.simple_exp)
+            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,n_tbig*dt_small,*self.pulses,decimals=1, exp_part=self.simple_exp)
+        if self.gaussian_t is None or simple_t:
+            self.t1 = construct_t(0, self.tb, dt_small, n_tbig*dt_small, dt_exp, *self.pulses, simple_exp=self.simple_exp)
 
     def calc_timedynamics(self, output_ops=None):
         opts_new = self.options.copy()
@@ -91,6 +94,90 @@ class TwoPhotonTimebinNew(TimeBin):
             print(np.array2string(density_matrix/norm, formatter={'complex_kind': lambda x: "%.3f+%.3fj" % (x.real, x.imag)}))
         # still output both, because the diagonal contains the number of coincidence measurments
         return concurrence(density_matrix/norm), density_matrix
+    
+    def calc_densitymatrix_tl(self, save_dm=False, filename="densitymatrix_tl", verbose=False, reduced=True):
+        """
+        does not contain the "second time ordering" terms with t2 <= t1, tests have shown that for generation of the EE,LL state,
+        these elements are usually close to zero. The function as it is reproduces the density matrices that are obtained with
+        the non-time-local method very well, while being much faster to compute.
+
+        if using reduced=True, only the diagonal and the coherence between EE and LL is calculated.
+        """
+        density_matrix = np.zeros([4,4], dtype=complex)
+        tl_map, dm_1, dm_2 = self._calc_dynmaps()
+        precals_tls = self.precalc_tls
+        rho0 = self.get_initial_state()
+        dim = rho0.shape[0]
+
+        precalc_tls = precals_tls.transpose(1, 2, 0).conjugate()
+        dm_1 = dm_1.transpose(1, 2, 0).conjugate()
+        dm_2 = dm_2.transpose(1, 2, 0).conjugate()
+
+        sigma_x = op_to_matrix(self.sigma_x)
+        sigma_xdag = op_to_matrix(self.sigma_xdag)
+        sigma_b = op_to_matrix(self.sigma_b)
+        sigma_bdag = op_to_matrix(self.sigma_bdag)
+        Id = np.eye(dim)
+
+        # op_et1l, op_et1r, op_et2l, op_et2r, op_lt1l, op_lt1r, op_lt2l, op_lt2r
+        ops_eeee = [sigma_b, sigma_bdag, sigma_x, sigma_xdag, Id, Id, Id, Id]  # needs stop at t2
+        ops_elel = [sigma_b, sigma_bdag, Id, Id, Id, Id, sigma_x, sigma_xdag]
+        ops_lele = [sigma_x, sigma_xdag, Id, Id, Id, Id, sigma_b, sigma_bdag]
+        ops_llll = [Id, Id, Id, Id, sigma_b, sigma_bdag, sigma_x, sigma_xdag]
+
+        ops_eeel = [sigma_b, sigma_bdag, Id, sigma_xdag, Id, Id, Id, sigma_x]
+        # op_eeel2 = [Id, sigma_xdag, sigma_b, sigma_bdag, Id, sigma_x, Id, Id]  # needs stop at t1+tb
+        ops_eele = [Id, sigma_bdag, sigma_x, sigma_xdag, Id, sigma_b, Id, Id]  # needs stop at t1+tb
+        # ops_eele = [sigma_x, sigma_xdag, Id, sigma_bdag, Id, Id, Id, sigma_b]
+        ops_elle = [Id, sigma_bdag, sigma_x, Id, sigma_xdag, Id, Id, sigma_b]
+        ops_elll = [Id, sigma_bdag, Id, Id, sigma_b, Id, sigma_x, sigma_xdag]
+        ops_lell = [Id, Id, Id, sigma_xdag, sigma_b, sigma_bdag, Id, sigma_x]
+
+        ops_eell = [Id, sigma_bdag, Id ,sigma_xdag, sigma_b, Id, sigma_x, Id]
+
+        n = 4
+        if not reduced:
+            n = 10
+        tq = tqdm.tqdm(total=n, disable=not verbose)
+
+        t1, G2_EEEE, density_matrix[0,0], _ = self.eightops_fortran(rho0=rho0, operators=ops_eeee, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=True)
+        density_matrix[0,0] = density_matrix[0,0].real  # should be real
+        tq.update()
+        t1, G2_ELEL, density_matrix[1,1], _ = self.eightops_fortran(rho0=rho0, operators=ops_elel, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+        density_matrix[1,1] = density_matrix[1,1].real
+        tq.update()
+        t1, G2_LELE, density_matrix[2,2], _ = self.eightops_fortran(rho0=rho0, operators=ops_lele, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+        density_matrix[2,2] = density_matrix[2,2].real
+        tq.update()
+        t1, G2_LLLL, density_matrix[3,3], _ = self.eightops_fortran(rho0=rho0, operators=ops_llll, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+        density_matrix[3,3] = density_matrix[3,3].real
+        tq.update()
+        t1, G2_EELL, density_matrix[0,3], _ = self.eightops_fortran(rho0=rho0, operators=ops_eell, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+        tq.update()
+        density_matrix[3,0] = density_matrix[0,3].conjugate()
+
+        if not reduced:
+            t1, G2_EEEL, density_matrix[0,1], _ = self.eightops_fortran(rho0=rho0, operators=ops_eeel, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+            density_matrix[1,0] = density_matrix[0,1].conjugate()
+            tq.update()
+            t1, G2_EELE, density_matrix[0,2], _ = self.eightops_fortran(rho0=rho0, operators=ops_eele, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False, late_t1_only=True)
+            density_matrix[2,0] = density_matrix[0,2].conjugate()
+            tq.update()
+            t1, G2_ELLE, density_matrix[1,2], _ = self.eightops_fortran(rho0=rho0, operators=ops_elle, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+            density_matrix[2,1] = density_matrix[1,2].conjugate()
+            tq.update()
+            t1, G2_ELLL, density_matrix[1,3], _ = self.eightops_fortran(rho0=rho0, operators=ops_elll, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+            density_matrix[3,1] = density_matrix[1,3].conjugate()
+            tq.update()
+            t1, G2_LELL, density_matrix[2,3], _ = self.eightops_fortran(rho0=rho0, operators=ops_lell, precalc_tls=precalc_tls, dm_1=dm_1, dm_2=dm_2, early_only=False)
+            density_matrix[3,2] = density_matrix[2,3].conjugate()
+            tq.update()
+        tq.close()
+        norm = np.trace(density_matrix)
+        if save_dm:
+            np.save(filename+"_dm.npy", density_matrix)
+        return concurrence(density_matrix/norm), density_matrix, density_matrix/norm
+
 
     def prepare_operators(self, sigma_x, sigma_xdag, sigma_b, sigma_bdag, verbose=False):
         """
@@ -162,7 +249,7 @@ class TwoPhotonTimebinNew(TimeBin):
                     # plt.plot(t_new,np.imag(temp_t2),'b-')
                     # plt.savefig("aa_tests/plot_{}.png".format(i))
                     # integrate over t_new
-                    _G2[i] = np.trapz(temp_t2,t_new)
+                    _G2[i] = np.trapezoid(temp_t2,t_new)
                     _G2_t1t2[i, -len(temp_t2):] = temp_t2 
             return _G2, _G2_t1t2
         # first, case t1 <= t2
@@ -174,7 +261,7 @@ class TwoPhotonTimebinNew(TimeBin):
         sigma_right = {"operator": self.sigma_bdag, "applyFrom": "_right", "applyBefore":"false"}
         _G2_1, _G21_t1t2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
         if use_second_zero:
-            return t1, t2, _G2_1, np.trapz(_G2_1,t1)*self.gamma_e**2, _G2_1, _G2_1*0,  _G21_t1t2
+            return t1, t2, _G2_1, np.trapezoid(_G2_1,t1)*self.gamma_e**2, _G2_1, _G2_1*0,  _G21_t1t2
         # second, case t2 <= t1
         out_op1 = self.sigma_bdag + "*" + self.sigma_b
         # should be zero, as t1=t2 is already covered by the first case
@@ -186,7 +273,7 @@ class TwoPhotonTimebinNew(TimeBin):
         _G2_2, _G22_t1t2 = _rho_ee_ee(output_ops, sigma_left, sigma_right)
         # combine both
         _G2 = _G2_1 + _G2_2
-        return t1, t2, _G2, np.trapz(_G2,t1)*self.gamma_e**2, _G2_1, _G2_2, _G21_t1t2+_G22_t1t2
+        return t1, t2, _G2, np.trapezoid(_G2,t1)*self.gamma_e**2, _G2_1, _G2_2, _G21_t1t2+_G22_t1t2
     
     def rho_ll_ll(self, use_second_zero=False):
         """
@@ -254,8 +341,8 @@ class TwoPhotonTimebinNew(TimeBin):
                     temp_t2[0] = np.abs(futures[i][2][-n_t2-1])
                 t_new = t2[:len(temp_t2)]
                 # integrate over t_new
-                _G2[i] = np.trapz(temp_t2,t_new)
-        return t1, _G2, np.trapz(_G2,t1)*self.gamma_e**2
+                _G2[i] = np.trapezoid(temp_t2,t_new)
+        return t1, _G2, np.trapezoid(_G2,t1)*self.gamma_e**2
 
 
     def rho_le_le(self):
@@ -360,8 +447,8 @@ class TwoPhotonTimebinNew(TimeBin):
                 for k in range(0,len(t2_array)):
                     # pgx
                     temp_t2[k] = futures[k][1][-1]
-                _G2[i] = np.trapz(temp_t2, t2_array)
-            return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+                _G2[i] = np.trapezoid(temp_t2, t2_array)
+            return t1, _G2, np.trapezoid(_G2, t1)*self.gamma_e**2
 
         # t2 < t1
         def _part_t2_le_t1():
@@ -408,8 +495,8 @@ class TwoPhotonTimebinNew(TimeBin):
                 for k in range(0,len(t2_array)):
                     # pgx
                     temp_t2[k] = futures[k][1][-1]
-                _G2[i] = np.trapz(temp_t2, t2_array)
-            return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+                _G2[i] = np.trapezoid(temp_t2, t2_array)
+            return t1, _G2, np.trapezoid(_G2, t1)*self.gamma_e**2
 
         t1, _G21, eeel_1 = _part_t1_le_t2()
         t1, _G22, eeel_2 = _part_t2_le_t1()
@@ -464,8 +551,464 @@ class TwoPhotonTimebinNew(TimeBin):
             for k in range(1,len(t2_array)):
                 temp_t2[k] = futures[k][1][-1]
             _G2_t1t2[i, -len(temp_t2):] = temp_t2
-            _G2[i] = np.trapz(temp_t2, t2_array)
-        return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2, _G2_t1t2
+            _G2[i] = np.trapezoid(temp_t2, t2_array)
+        return t1, _G2, np.trapezoid(_G2, t1)*self.gamma_e**2, _G2_t1t2
+    
+    def _calc_dynmaps(self):
+        """
+        Calculates dynamical maps for timebin 1 and 2.
+        does not work for phonons.
+        
+        :param self: Description
+        """
+        # check if key phonons is in options and if it is True
+        if "phonons" in self.options.keys(): 
+            if self.options["phonons"]:
+                print("Phonons are enabled in the options. Correlation functions will give wrong results.")
+                # raise ValueError("Dynamical maps for time-bin cannot yet be calculated with phonons.")
+        print("Calculating dynamical maps for time-bins...")
+        options_new = self.options.copy()
+        self.prepare_puslefile_tls()
+
+        options_new["pulse_file_x"] = self.pulse_file_x1
+        options_new["pulse_file_y"] = self.pulse_file_y1
+        result1, dm1 = self.system(0, self.gaussian_t + 10, calc_dynmap=True, **options_new)  # first time-bin
+
+        options_new["pulse_file_x"] = self.pulse_file_x2
+        options_new["pulse_file_y"] = self.pulse_file_y2
+        result2, dm2 = self.system(0, self.gaussian_t + 10, calc_dynmap=True, **options_new)  # second time-bin
+
+        print("Dynamical maps calculated.")
+        _t1 = np.round(np.real(result1[0]),6)  # avoid numerical noise by rounding
+        _t2 = np.round(np.real(result2[0]),6)  
+        if len(_t1) != len(_t2):
+            print("Warning: time axes of dyn. maps are not the same length. Check if anything is wrong.")
+        if self.dt < 0.00001:
+            print("Warning: very small time-step, time-local map uses truncation of t to 1e-6.")
+        dm_tl1 = calc_tl_dynmap_pseudo(dm1, _t1)
+        dm_tl2 = calc_tl_dynmap_pseudo(dm2, _t2)
+        tl_map = dm_tl1[-1]  # last map of the first time-bin
+
+        self.precalc_tls = self._calc_binary_steps(tl_map)
+        self.dm_tl1 = dm_tl1
+        self.dm_tl2 = dm_tl2
+        return tl_map, dm_tl1, dm_tl2
+    
+    def _calc_binary_steps(self, tl_map):
+        n_tb = int(self.tb/self.dt)
+        # we want to calculate tl_map^n for n=1,2,3,...,log2(n_tb)
+        # then we can use these to calculate tl_map^k for any k by writing k in binary form
+        # e.g. for k=13=1101_2 we can write tl_map^13 = tl_map^(8+4+0+1) = tl_map^8 * tl_map^4 * tl_map^0 * tl_map^1
+        # this way, we only have to calculate log2(n_tb) maps instead of n_tb maps
+        # this is especially useful for small dt, i.e. large n_tb
+        n_bin = int(np.log2(n_tb)) + 1
+        precalc_tls = np.zeros([n_bin,
+                                tl_map.shape[0],
+                                tl_map.shape[1]], dtype=complex)
+        precalc_tls[0] = tl_map
+        for i in range(1, n_bin):
+            precalc_tls[i] = precalc_tls[i-1] @ precalc_tls[i-1]
+        return precalc_tls
+    
+    def eell_tl(self):
+        op1 = self.sigma_bdag
+        op2 = self.sigma_xdag
+        op3 = self.sigma_b
+        op4 = self.sigma_x
+        dim = 5
+
+        # op1 = np.eye(dim)  # right
+        # op2 = np.eye(dim)
+        # op3 = np.eye(dim)
+        # op4 = op_to_matrix(f"|1><1|_{dim}")  # left
+        t1, _G2_1, eell_1, G21_t1t2 = self.four_time_tl(op1, op2, op3, op4, supply_mats=False)
+        return t1, _G2_1, eell_1, _G2_1, _G2_1*0, G21_t1t2
+    
+    def eell_tl_f(self):
+        op_1 = op_to_matrix(self.sigma_bdag)  # right
+        op_2 = op_to_matrix(self.sigma_xdag)  # right
+        op_3 = op_to_matrix(self.sigma_b)  # left
+        op_4 = op_to_matrix(self.sigma_x)  # left
+
+        # op_1 = np.kron(op_1.T, np.eye(self.dim))  # right
+        # op_2 = np.kron(op_2.T, np.eye(self.dim))  # right
+        # op_3 = np.kron(np.eye(self.dim), op_3)  # left
+        # op_4 = np.kron(np.eye(self.dim), op_4)  # left
+
+        tl_map, dm_1, dm_2 = self._calc_dynmaps()
+        rho_init = self.get_initial_state()
+        t1 = np.round(self.t1,6)  # avoid numerical noise
+        dt = np.round(self.dt,6)
+        dim = rho_init.shape[0]
+
+        # op_1 = np.eye(dim)
+        # op_2 = np.eye(dim)
+        # op_3 = np.eye(dim)
+        # op_4 = op_to_matrix(f"|1><1|_{dim}")  # left
+
+        tb = self.tb
+        # print("dynmap shapes:", tl_map.shape, dm_tl1.shape, dm_tl2.shape)
+        precalc_tls = self._calc_binary_steps(tl_map)
+        precalc_tls = precalc_tls.transpose(1, 2, 0).conjugate()
+        dm_1 = dm_1.transpose(1, 2, 0).conjugate()
+        dm_2 = dm_2.transpose(1, 2, 0).conjugate()
+        # rho_init = np.reshape(rho_init, dim**2)
+        # print("shapes:", dm_1.shape, dm_2.shape
+        print(timebin_tl.__doc__)
+        start = time.time()
+        G12 = timebin_tl.four_time(dm_1,dm_2,rho_init.reshape(dim*dim),t1,precalc_tls,dt,dim,op_1,op_2,op_3,op_4,tb)
+        stop = time.time()
+
+        print(f"calculation took {stop-start:.2f} seconds")
+        _G2 = np.zeros([len(t1)], dtype=complex)
+        for i in range(len(t1)):
+            _G2[i] = np.trapezoid(G12[i, i:], self.t1[i:])
+        # _G2 = np.trapezoid(G12,t1, axis=1)
+        eell = np.trapezoid(_G2,t1)*self.gamma_e**2
+        return t1, _G2, eell, G12 #, rho_reshaped
+    
+    def eell_tl_8ops(self):
+        tl_map, dm_1, dm_2 = self._calc_dynmaps()
+        rho_init = self.get_initial_state()
+        t1 = np.round(self.t1,6)  # avoid numerical noise
+        dt = np.round(self.dt,6)
+        dim = rho_init.shape[0]
+
+        # {e,l}|{t1,t2}|{r,l} =  {early,late}|{time1,time2}|{right,left}
+        op_et1r = op_to_matrix(self.sigma_bdag)  # right
+        op_et1l = np.eye(dim)
+        op_et2r = op_to_matrix(self.sigma_xdag)  # right
+        op_et2l = np.eye(dim)
+        op_lt1r = np.eye(dim)
+        op_lt1l = op_to_matrix(self.sigma_b)  # left
+        op_lt2r = np.eye(dim)
+        op_lt2l = op_to_matrix(self.sigma_x)  # left
+
+        tb = self.tb
+        precalc_tls = self._calc_binary_steps(tl_map)
+        precalc_tls = precalc_tls.transpose(1, 2, 0).conjugate()
+        dm_1 = dm_1.transpose(1, 2, 0).conjugate()
+        dm_2 = dm_2.transpose(1, 2, 0).conjugate()
+
+        # print(timebin_tl.__doc__)
+        start = time.time()
+        G12 = timebin_tl.four_time_8op(dm_1,dm_2,rho_init.reshape(dim*dim),t1,precalc_tls,dt,dim,op_et1l,op_et1r,op_et2l,op_et2r,op_lt1l,op_lt1r,op_lt2l,op_lt2r,False,tb)
+        stop = time.time()
+        print(f"calculation took {stop-start:.2f} seconds")
+        _G2 = np.zeros([len(t1)], dtype=complex)
+        for i in range(len(t1)):
+            _G2[i] = np.trapezoid(G12[i, i:], self.t1[i:])
+        eell = np.trapezoid(_G2,t1)*self.gamma_e**2
+        return t1, _G2, eell, G12 #, rho_reshaped
+    
+    def eightops_fortran(self, rho0, operators, precalc_tls, dm_1, dm_2, early_only=False, late_t1_only=False):
+        dim = rho0.shape[0]
+        t1 = np.round(self.t1,6)  # avoid numerical noise
+        dt = np.round(self.dt,6)
+        tb = self.tb
+        op_et1l, op_et1r, op_et2l, op_et2r, op_lt1l, op_lt1r, op_lt2l, op_lt2r = operators
+        G12 = timebin_tl.four_time_8op(dm_1,dm_2,rho0.reshape(dim*dim),t1,precalc_tls,dt,dim,op_et1l,op_et1r,op_et2l,op_et2r,op_lt1l,op_lt1r,op_lt2l,op_lt2r,early_only,late_t1_only,tb)
+        _G2 = np.zeros([len(t1)], dtype=complex)
+        for i in range(len(t1)):
+            _G2[i] = np.trapezoid(G12[i, i:], self.t1[i:])
+        eell = np.trapezoid(_G2,t1)*self.gamma_e**2
+        return t1, _G2, eell, G12
+
+    def get_initial_state(self):
+        dim = self.dim
+        init_rho = "|0><0|_{dim}".format(dim=dim)
+        try:
+            init_rho = self.options["initial"]
+            print("Using initial state from options:", init_rho)
+        except KeyError:
+            print("Warning: no initial state given, assuming ground state.")
+        rho0 = op_to_matrix(init_rho)
+        return rho0
+    
+    def fast_propagate(self, rho, n):
+        bin_n = np.binary_repr(n)
+        for i, bit in enumerate(reversed(bin_n)):
+            if bit == '1':
+                rho = self.precalc_tls[i] @ rho
+        return rho
+    
+    def propagate_tb_new(self, t_start, t_stop, rho, dm_tl, verbose=False):
+            t_start = np.round(t_start,6)  # avoid numerical noise
+            t_stop = np.round(t_stop,6)
+            n_start = int(np.round(t_start/self.dt))
+            n_stop = int(np.round(t_stop/self.dt))
+            n_steps = n_stop - n_start
+            steps_dm = min(len(dm_tl) - n_start, n_steps)
+            if steps_dm < 0:
+                steps_dm = 0
+            if verbose:
+                print(f"propagate from {t_start} to {t_stop} using {n_steps} steps of {self.dt}, of which {steps_dm} are from dm")
+            while steps_dm > 0:
+                rho = dm_tl[n_start] @ rho
+                steps_dm -= 1
+                n_start += 1
+                n_steps -= 1
+            # if n_steps > 0:
+            #     if verbose:
+            #         print(f"  propagating remaining {n_steps} steps with tl_map")
+            # rho = self.fast_propagate(rho, int(np.round(n_steps)))  # 
+            rho = timebin_tl.utils.fast_propagate(rho, self.precalc_tls.transpose(1,2,0), int(np.round(n_steps)))
+            # rho = np.linalg.matrix_power(self.precalc_tls[0],n_steps) @ rho
+            return rho
+    
+    def dynamics_tl(self):
+        tl_map, dm_tl1, dm_tl2 = self._calc_dynmaps()
+        rho0 = self.get_initial_state()
+        dim = rho0.shape[0]
+        t = np.arange(0, 2*self.tb, self.dt)
+        rho_t = np.zeros([len(t), dim, dim], dtype=complex)
+        rho_t[0] = rho0
+        n_tb = int(self.tb/self.dt)
+        n_dm = len(dm_tl1) 
+        # print(n_tb)
+        
+        for i in range(n_tb):
+            verbose=False
+            # if i < 15:
+            #     verbose=True
+            rho_t[i+1] = self.propagate_tb_new(i*self.dt, (i+1)*self.dt, rho_t[i].reshape(dim**2), dm_tl1, verbose=verbose).reshape(dim,dim)
+        for i in range(n_tb,len(t)-1):
+            verbose=False
+            # if i <5:
+            #     verbose=True
+            rho_t[i+1] = self.propagate_tb_new((i-n_tb)*self.dt, (i-n_tb+1)*self.dt, rho_t[i].reshape(dim**2), dm_tl2, verbose=verbose).reshape(dim,dim)
+        # for i in range(0,len(dm_tl1)):
+        #     rho_t[i+1] = (dm_tl1[i] @ rho_t[i].reshape(dim**2)).reshape(dim,dim)
+        # for i in range(len(dm_tl1), n_tb):
+        #     rho_t[i+1] = (tl_map @ rho_t[i].reshape(dim**2)).reshape(dim,dim)
+        # for i in range(n_tb, len(dm_tl2)+n_tb):
+        #     rho_t[i+1] = (dm_tl2[i-n_tb] @ rho_t[i].reshape(dim**2)).reshape(dim,dim)
+        # for i in range(len(dm_tl2)+n_tb, len(t)-1):
+        #     rho_t[i+1] = (tl_map @ rho_t[i].reshape(dim**2)).reshape(dim,dim)
+        return t, rho_t
+    
+    def test_apply_ops(self):
+        op1 = self.sigma_bdag
+        op2 = self.sigma_xdag
+        op3 = self.sigma_b
+        op4 = self.sigma_x
+        sigma1_mat = op_to_matrix(op1)
+        sigma2_mat = op_to_matrix(op2)
+        sigma3_mat = op_to_matrix(op3)
+        sigma4_mat = op_to_matrix(op4)
+        print("Operators:")
+        print(op1)
+        print(sigma1_mat)
+        # print(op2)
+        # print(sigma2_mat)
+        # print(op3)
+        # print(sigma3_mat)
+        # print(op4)
+        # print(sigma4_mat)
+        dim = sigma1_mat.shape[0]
+        rho_random = np.random.rand(dim, dim)
+        print("Random rho @ op1:")
+        res1 = rho_random @ sigma1_mat
+        # print(res1)
+        res2 = timebin_tl.utils.apply_matrix_from_right((rho_random), (sigma1_mat), dim)
+        # res2 = (res2).reshape(dim,dim)
+        # print(res2)
+        print(res1-res2)
+        rho2 = timebin_tl.utils.test_reshape(rho_random, dim)
+        print(rho2-rho_random)
+
+    def dynamics_tl_t1(self):
+        tl_map, dm_tl1, dm_tl2 = self._calc_dynmaps()
+        rho0 = self.get_initial_state()
+        dim = rho0.shape[0]
+        t = [0]
+        rho_t = np.zeros([2*len(self.t1)-1, dim, dim], dtype=complex)
+        rho_t[0] = rho0
+        # print("rhot-shapte:"  , rho_t.shape)
+        n_tb1 = len(self.t1)-1
+        for i in range(n_tb1):
+            _t1 = self.t1[i]
+            _t1_next = self.t1[i+1]
+            # rho_t[i+1] = self.propagate_tb_new(_t1, _t1_next, rho_t[i].reshape(dim**2), dm_tl1, verbose=False).reshape(dim,dim)
+            rho_t[i+1] = timebin_tl.utils.propagate_tb(np.round(_t1,6), np.round(_t1_next,6), self.dt, rho_t[i].reshape(dim**2), dm_tl1.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+            t.append(_t1_next)
+        for i in range(n_tb1):
+            _t1 = self.t1[i] 
+            _t1_next = self.t1[i+1]
+            # rho_t[i+1 + n_tb1] = self.propagate_tb_new(_t1, _t1_next, rho_t[i+n_tb1].reshape(dim**2), dm_tl2).reshape(dim,dim)
+            rho_t[i+1 + n_tb1] = timebin_tl.utils.propagate_tb(np.round(_t1,6), np.round(_t1_next,6), self.dt, rho_t[i+n_tb1].reshape(dim**2), dm_tl2.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+            t.append(_t1_next + self.tb)
+        return np.array(t), rho_t[:len(t)]
+    
+    def dynamics_tl_t1_t2(self, t1, t2, sigma_1, sigma_2, sigma_3, take_IDs=False):
+        sigma1_mat = op_to_matrix(sigma_1)
+        sigma2_mat = op_to_matrix(sigma_2)
+        sigma3_mat = op_to_matrix(sigma_3)
+        if take_IDs:
+            dim = self.get_initial_state().shape[0]
+            sigma1_mat = np.eye(dim, dtype=complex)
+            sigma2_mat = np.eye(dim, dtype=complex)
+            sigma3_mat = np.eye(dim, dtype=complex)
+        tl_map, dm_tl1, dm_tl2 = self._calc_dynmaps()
+        rho0 = self.get_initial_state()
+        dim = rho0.shape[0]
+        t = [0]
+        
+        self.t1 = np.linspace(0,self.tb,int(self.tb/1)+1,endpoint=True) 
+        rho_t = np.zeros([2*len(self.t1)-1, dim, dim], dtype=complex)
+        rho_t[0] = rho0
+
+        self.t1 = np.round(self.t1,6)  # avoid numerical noise by rounding
+        print("rhot-shapte:"  , rho_t.shape)
+        print("tb:", self.tb, "t1:", t1, "t2:", t2)
+        n_tb1 = len(self.t1)-1
+        for i in range(n_tb1):
+            _t1 = self.t1[i]
+            _t1_next = self.t1[i+1]
+            rho_temp = rho_t[i].copy()
+            if _t1 == t1:
+                print("applying sigma1 at t1 =", t1)
+                rho_temp = rho_temp @ sigma1_mat
+            if _t1 == t2:
+                print("applying sigma2 at t2 =", t2)
+                rho_temp = rho_temp @ sigma2_mat
+            rho_t[i+1] = self.propagate_tb_new(_t1, _t1_next, rho_temp.reshape(dim**2), dm_tl1, verbose=False).reshape(dim,dim)
+            t.append(_t1_next)
+        for i in range(n_tb1):
+            _t1 = self.t1[i] 
+            _t1_next = self.t1[i+1]
+            rho_temp = rho_t[i+n_tb1].copy()
+            if _t1 == t1:
+                print("applying sigma3 at t1+tb =", t1 + self.tb)
+                rho_temp = sigma3_mat @ rho_temp
+            rho_t[i+1 + n_tb1] = self.propagate_tb_new(_t1, _t1_next, rho_temp.reshape(dim**2), dm_tl2).reshape(dim,dim)
+            t.append(_t1_next + self.tb)
+        return np.array(t), rho_t
+
+    def dynamics_tl_t1_t2_f(self, _t1, _t2, sigma_1, sigma_2, sigma_3, take_IDs=False):
+        sigma1_mat = op_to_matrix(sigma_1)
+        sigma2_mat = op_to_matrix(sigma_2)
+        sigma3_mat = op_to_matrix(sigma_3)
+        if take_IDs:
+            dim = self.get_initial_state().shape[0]
+            sigma1_mat = np.eye(dim, dtype=complex)
+            sigma2_mat = np.eye(dim, dtype=complex)
+            sigma3_mat = np.eye(dim, dtype=complex)
+
+        #op_1 = np.kron(sigma1_mat.T, np.eye(self.dim))  # right
+        #op_2 = np.kron(sigma2_mat.T, np.eye(self.dim))  # right
+        #op_3 = np.kron(np.eye(self.dim), sigma3_mat)  # left
+        op_1 = sigma1_mat
+        op_2 = sigma2_mat
+        op_3 = sigma3_mat
+        # op_4 = np.kron(np.eye(self.dim), op_4)  # left
+        rho0 = self.get_initial_state()
+        dim = rho0.shape[0]
+        rho0 = rho0.reshape(dim*dim)
+
+        t1 = np.round(self.t1,6)  # avoid numerical noise
+        dm_tl1 = self.dm_tl1.transpose(1,2,0).conj()  # conjugate because in fortran we use row-major order
+        dm_tl2 = self.dm_tl2.transpose(1,2,0).conj()  # just transposing the dynamical maps to (2,1,0) does not work
+        precalc_tls = self.precalc_tls.transpose(1,2,0).conj()
+        result = timebin_tl.dynamics_t1_t2(dm_1=dm_tl1,dm_2=dm_tl2,t1op=_t1,t2op=_t2,rho_init=rho0,t1=t1,precalc_tls=precalc_tls,dt=self.dt,dim=dim,tb=self.tb,op_1=op_1,op_2=op_2,op_3=op_3)
+        print(result.shape)
+        result = result.transpose(1,0)
+        result_reshaped = np.zeros((len(result),dim,dim), dtype=complex)
+        for i in range(len(result)):
+            result_reshaped[i] = result[i].reshape(dim,dim).T  # transpose because we come from fortrans row-major order
+        t_complete = np.concatenate((t1, t1[1:] + self.tb))
+        return t_complete, result_reshaped
+    
+
+    def four_time_tl(self, sigma_1, sigma_2, sigma_3, sigma_4, supply_mats=False):
+        # sigma_4 = output_ops[1]
+        # get matrix representations of the operators
+        if supply_mats:
+            sigma1_mat = sigma_1
+            sigma2_mat = sigma_2
+            sigma3_mat = sigma_3
+            sigma4_mat = sigma_4
+        else:
+            sigma1_mat = op_to_matrix(sigma_1)
+            sigma2_mat = op_to_matrix(sigma_2)
+            sigma3_mat = op_to_matrix(sigma_3)
+            sigma4_mat = op_to_matrix(sigma_4)
+
+        _G2 = np.zeros([len(self.t1)], dtype=complex)
+        _G2_t1t2 = np.zeros([len(self.t1),len(self.t1)], dtype=complex)
+        print("G2 memory footprint: {} MB".format(_G2_t1t2.nbytes/1024**2))
+        # calculate dynamical maps
+        tl_map, dm_tl1, dm_tl2 = self._calc_dynmaps()
+        # print("dynmap shapes:", tl_map.shape, dm_tl1.shape, dm_tl2.shape)
+        n_dm = len(dm_tl1)
+        precalc_tls = self._calc_binary_steps(tl_map)
+
+        # get initial state
+        rho0 = self.get_initial_state()
+        dim = rho0.shape[0]
+        rho_t = rho0.copy()
+        print("Initial state shape :", rho0.shape)
+        
+        # loop over t1
+        self.t1 = np.round(self.t1,6)  # avoid numerical noise by rounding
+        verbose=False
+        for i in tqdm.trange(len(self.t1),leave=None):
+            _t1 = self.t1[i]
+            # _t1_now = 0 if i == 0 else self.t1[i-1]
+            # propagate to _t1
+            # print("propagate to t1 =", _t1, "from", _t1_now)
+            
+            # if i <= 35:
+            #     verbose=True
+            # else:
+            #     verbose=False
+
+            rho_t = self.propagate_tb_new(0, _t1, rho0.copy().reshape(dim**2), dm_tl1, verbose=verbose).reshape(dim,dim)  #propagate_tb1(_t1_now, _t1, rho_t.reshape(dim**2)).reshape(dim,dim)
+            # rho_t = timebin_tl.utils.propagate_tb(0, np.round(_t1,6), self.dt, rho0.copy().reshape(dim**2), dm_tl1.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+            rho_t = rho_t @ sigma1_mat
+            # rho_t = self.propagate_tb_new(_t1_now, _t1, rho_t.reshape(dim**2), dm_tl1, verbose=verbose).reshape(dim,dim)  #propagate_tb1(_t1_now, _t1, rho_t.reshape(dim**2)).reshape(dim,dim)
+            # loop over t2, which starts at t1
+            # if i == 32:
+            #     verbose=True
+            # else:
+            t2_array = self.t1[i:]  # array for the second time-axis
+            temp_t2 = np.zeros_like(t2_array, dtype=complex)
+            verbose=False
+            for j in tqdm.trange(len(self.t1)-i,leave=None):
+                # if i == 35 and j == 2:
+                #     verbose=True
+                # else:
+                #     verbose=False
+                # apply sigma_1 at t1 from right
+                # rho_t1 = rho_t.copy() @ sigma1_mat
+                _t2 = self.t1[i+j]
+                # propagate to _t2
+                rho_t1 = self.propagate_tb_new(_t1, _t2, rho_t.copy().reshape(dim**2), dm_tl1, verbose=verbose).reshape(dim,dim)
+                # rho_t1 = timebin_tl.utils.propagate_tb(np.round(_t1,6), np.round(_t2,6), self.dt, rho_t.copy().reshape(dim**2), dm_tl1.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+                # rho_t1 = self.propagate_tb_new(_t1, _t2, rho_t1.reshape(dim**2), dm_tl1, verbose=verbose).reshape(dim,dim)
+                # apply sigma_2 at t2 from right
+                rho_t1 = rho_t1 @ sigma2_mat
+                # propagate to t1+tb
+                rho_t1 = self.propagate_tb_new(_t2, self.tb, rho_t1.reshape(dim**2), dm_tl1, verbose=verbose).reshape(dim,dim)
+                # rho_t1 = timebin_tl.utils.propagate_tb(np.round(_t2,6), np.round(self.tb,6), self.dt, rho_t1.reshape(dim**2), dm_tl1.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+                rho_t1 = self.propagate_tb_new(0, _t1, rho_t1.reshape(dim**2), dm_tl2, verbose=verbose).reshape(dim,dim)
+                # rho_t1 = timebin_tl.utils.propagate_tb(0, np.round(_t1,6), self.dt, rho_t1.reshape(dim**2), dm_tl2.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+                
+                # apply sigma_3 at t1+tb from left
+                rho_t1 = sigma3_mat @ rho_t1
+                # propagate to t2+tb
+                rho_t1 = self.propagate_tb_new(_t1, _t2, rho_t1.reshape(dim**2), dm_tl2, verbose=verbose).reshape(dim,dim)
+                # rho_t1 = timebin_tl.utils.propagate_tb(np.round(_t1,6), np.round(_t2,6), self.dt, rho_t1.reshape(dim**2), dm_tl2.transpose(1,2,0), self.precalc_tls.transpose(1,2,0)).reshape(dim,dim)
+                # apply sigma_4 at t2+tb from left
+                rho_t1 = sigma4_mat @ rho_t1
+                # trace
+                # temp_t2[j] = np.trace(rho_t1)
+                _G2_t1t2[i, j+i] = np.trace(rho_t1)
+            # integrate over t2
+            # _G2_t1t2[i, -len(temp_t2):] = temp_t2
+            # _G2[i] = np.trapezoid(temp_t2, t2_array)  #
+            _G2[i] = np.trapezoid(_G2_t1t2[i, i:], self.t1[i:])
+        return self.t1, _G2, np.trapezoid(_G2, self.t1)*self.gamma_e**2, _G2_t1t2
 
     def rho_el_le(self):
         # case t1 <= t2
@@ -536,8 +1079,8 @@ class TwoPhotonTimebinNew(TimeBin):
                     temp_t2[1:n_t2+1] = futures[i][1][-n_t2:]
                 t_new = t2[:len(temp_t2)]
                 # integrate over t_new
-                _G2[i] = np.trapz(temp_t2,t_new)
-            return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+                _G2[i] = np.trapezoid(temp_t2,t_new)
+            return t1, _G2, np.trapezoid(_G2, t1)*self.gamma_e**2
 
         # case t2 <= t1
         def _part_t2_le_t1():
@@ -590,8 +1133,8 @@ class TwoPhotonTimebinNew(TimeBin):
                 temp_t2[0] = futures[0][2][-1]
                 for k in range(1,len(t2_array)):
                     temp_t2[k] = futures[k][1][-1]
-                _G2[i] = np.trapz(temp_t2, t2_array)
-            return t1, _G2, np.trapz(_G2, t1)*self.gamma_e**2
+                _G2[i] = np.trapezoid(temp_t2, t2_array)
+            return t1, _G2, np.trapezoid(_G2, t1)*self.gamma_e**2
         
         t1, _G21, elle_1 = _part_t1_le_t2()
         t1, _G22, elle_2 = _part_t2_le_t1()
