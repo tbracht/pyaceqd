@@ -11,6 +11,8 @@ setup(
         'numpy',
         'matplotlib',
         'tqdm',
-        'scipy'
+        'scipy',
+        'tabulate',
+        'pybind11',
     ],
 )

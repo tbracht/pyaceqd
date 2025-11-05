@@ -30,6 +30,29 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
+def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, threshold=8, output_ops=["|0><0|_5","|1><1|_5","|2><2|_5","|3><3|_5","|4><4|_5"], initial="|0><0|_5", use_infinite=True,
+               calc_dynmap=False):
+    system_prefix = "darkmodel_new_"
+    # |0> = G, |1> = X, |2> = Y, |3> = D, |4> = B
+    system_op = ["{}*|4><4|_5".format(-delta_b),"{}*|3><3|_5".format(-delta_xd)]
+    # system_op = ["{}*|1><1|_5".format(delta_b*0.5),"{}*|3><3|_5".format(delta_b*0.5-delta_xd)]
+    boson_op = "1*(|1><1|_5 + |2><2|_5 + |3><3|_5) + 2*|4><4|_5"  # B couples twice as strong
+    lindblad_ops = []
+    if lindblad:
+        if gamma_b is None:
+            gamma_b = gamma_e
+        lindblad_ops = [["|0><1|_5",gamma_e],["|0><2|_5",gamma_e],["|1><4|_5",gamma_b],["|2><4|_5",gamma_b]]  #  |2> is dark, does not decay 
+    # we use 'x'-polar for coupling between G, X and B, while 'y'-polar couples G, D and B
+    # Y can only be accessed by radiative decay from B
+    interaction_ops = [["|1><0|_5","x"],["|4><1|_5","x"],["|3><0|_5","y"],["|4><3|_5","y"]]
+    
+    result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
+                  multitime_op=multitime_op, system_prefix=system_prefix, threshold=str(int(threshold)), threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops,
+                  output_ops=output_ops, prepare_only=prepare_only, use_infinite=use_infinite, calc_dynmap=calc_dynmap)
+    return result
+
 def darkmodel_photons(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, delta_cx=-2, rad_loss=1/100, cav_loss=1/20, cav_coupl=1/30, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes |0><0|_3","|1><1|_4 otimes |0><0|_3","|2><2|_4 otimes |0><0|_3","|3><3|_4 otimes |0><0|_3"], initial="|0><0|_4 otimes |0><0|_3"):
     system_prefix = "darkmodel_photons"

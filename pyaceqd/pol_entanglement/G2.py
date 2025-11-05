@@ -98,7 +98,7 @@ class PolarizatzionEntanglement():
             # print(self.t1)
             # print(len(self.t1))
         else:
-            self.t1 = construct_t(0, self.tend, dt_small, 10*dt_small, *self.pulses, simple_exp=self.simple_exp, factor_tau=factor_tau)
+            self.t1 = construct_t(0, self.tend, dt_small, 1*dt_small, dt_small, *self.pulses, simple_exp=self.simple_exp, factor_tau=factor_tau)
 
     def prepare_pulsefile(self, verbose=False):
         # 2*tb is the maximum simulation length, 0 is the start of the simulation
@@ -235,7 +235,7 @@ class PolarizatzionEntanglement():
         for j in range(len(g1_symm)):
             # do fft for every t, along the tau axis
             spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
-        spectrum = np.real(np.trapz(spectra.transpose(),t_axis))
+        spectrum = np.real(np.trapezoid(spectra.transpose(),t_axis))
         return np.fft.fftshift(fft_freqs), spectrum, spectra
 
     def G2(self, op1_t, op2_ttau, op3_ttau, op4_t):

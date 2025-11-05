@@ -1135,6 +1135,11 @@ class PulseGenerator:
         export_csv(pulse_file_x, self.time, np.real(self.temporal_representation_x), np.imag(self.temporal_representation_x), precision=precision, delimit=' ')
         export_csv(pulse_file_y, self.time, np.real(self.temporal_representation_y), np.imag(self.temporal_representation_y), precision=precision, delimit=' ')
         return pulse_file_x, pulse_file_y
+    
+    def get_temporal_representation(self, abs_only = False):
+        if abs_only:
+            return self.time, np.abs(self.temporal_representation_x), np.abs(self.temporal_representation_y)
+        return self.time, self.temporal_representation_x, self.temporal_representation_y
 
     def generate_phase_difference(self,temp_dir = '', file_name = 'phase_diff', suffix = ''):
         phase_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 

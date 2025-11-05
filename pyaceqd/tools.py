@@ -106,6 +106,16 @@ def construct_t(t0, tend, dt_small=0.1, dt_big=1.0, dt_exp=None, *pulses, factor
         ts.append(np.array([tend]))
     return np.concatenate(ts,axis=0)
 
+def round_to_dt(t, dt):
+    """
+    rounds the time array t to the nearest multiple of dt
+    """
+    result = np.round(t/dt)*dt
+    # remove duplicates that can occur due to rounding
+    _, idx = np.unique(result, return_index=True)
+    return result[np.sort(idx)]
+    # return np.round(t/dt)*dt
+
 def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2, exp_part=True, add_tend=True):
     """
     uses gaussian timespacing from t0,...,texp, then exponential timespacing from
@@ -118,10 +128,11 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimal
         t_exp = np.exp(np.arange(np.log(texp-t0),np.log(tend-t0),dt_small))+t0
         ts.append(t_exp)
     else:
-        ts.append(np.arange(texp,tend,10*dt_small))
+        ts.append(np.arange(texp,tend,dt_big))
     if add_tend:
         ts.append(np.array([tend]))
-    return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
+    return round_to_dt(np.concatenate(ts,axis=0), dt_small)
+    # return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
 
 def export_csv(filename, *arg, precision=4, delimit=',', verbose=False):
     """
@@ -505,7 +516,13 @@ def extract_dms(dm, times, tau_c, t_MTOs):
     # i.e., it first comes into effect to the density matrix at t_MTO+dt
     i_tmtos = []
     for t_MTO in t_MTOs:
-        i_tmtos.append(np.where(times == t_MTO)[0][0])
+        try:
+            i_tmtos.append(np.where(times == t_MTO)[0][0])
+        except IndexError:
+            print(f"Available times: {times}")
+            print(f"Requested t_MTO: {t_MTO}")
+            raise ValueError(f"t_MTO {t_MTO} not found in times array. Make sure that t_MTO is included in the times array.")
+            
     # i_tmto = np.where(times == t_MTO)[0][0]
     
     # extract the dynamical map for the time before the MTO
@@ -665,13 +682,17 @@ def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25,
         else:
             norms_tl[i] = np.linalg.norm(tl_map[i]-tl_map[i+1])
     # relevant indices: 
+    #print("len(times): ", len(times))
+    #print("len(norms_tl): ", len(norms_tl))
+
     ix = np.where((times-times[0] > 0) & (times-times[0] < xlim))[0]
+    #print(ix)
     plt.clf()
     plt.xlabel("Time")
     plt.ylabel("Norm")
     plt.title("difference of adjacent dynamical maps")
     # plt.plot(times[1:-2]-times[0], norms_tl)
-    plt.plot(times[ix]-times[0], norms_tl[ix])
+    plt.plot(times[ix]-times[0], norms_tl[ix-1])
     # plt.legend(loc="upper right")
     # plt.xlim(1000,1150)
     # plt.ylim(0.8*np.min(norms_tl),1.2*np.max(norms_tl))
@@ -790,8 +811,10 @@ def get_union(arr_x1, arr_x2, arr_z1, arr_z2, axis_z=None):
     shape_z2 = arr_z2.shape
     if len(shape_z1) == 1:
         arr_z1 = arr_z1.reshape((len_x1, 1))
+        shape_z1 = arr_z1.shape
     if len(shape_z2) == 1:
         arr_z2 = arr_z2.reshape((len_x2, 1))
+        shape_z2 = arr_z2.shape
     if axis_z is None:
         if shape_z1[0] == shape_z1[1]:
             return ValueError("Cannot determine axis for z arrays.")

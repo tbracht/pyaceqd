@@ -27,13 +27,13 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
 
 def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, gamma_d=0, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_6","|1><1|_6","|2><2|_6","|3><3|_6","|4><4|_6","|5><5|_6"], initial="|0><0|_6", t_mem=20.48, output_dm=False, dressedstates=False, rf=False, rf_file=None,
-         firstonly=False,calibration_file=None, print_H=False, use_infinite=True):
+         firstonly=False,calibration_file=None, print_H=False, use_infinite=True, d0=d0, d1=d1, d2=d2):
     system_prefix = "sixls_linear"
     # |0> = G, |1> = X, |2> = Y, |3> = S = Dx, |4> = F = Dy, |5> = B
     if calibration_file is not None:
         E_X, E_Y, E_S, E_F, E_B, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz = read_calibration_file(calibration_file)
     else:
-        E_X, E_Y, E_S, E_F, E_B = energies_linear(delta_B=delta_b)
+        E_X, E_Y, E_S, E_F, E_B = energies_linear(delta_B=delta_b, d0=d0, d1=d1, d2=d2)
         g_ex = -0.65  # in plane electron g factor
         g_ez = -0.8  # out of plane electron g factor
         g_hx = -0.35  # in plane hole g factor
