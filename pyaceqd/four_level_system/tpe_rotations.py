@@ -10,6 +10,10 @@ import subprocess
 import time
 from pyaceqd.constants import hbar
 import pyaceqd.pulsegenerator as pg
+import pyaceqd.constants as constants
+
+temp_dir = constants.temp_dir
+
 
 class TPERotations():
     def __init__(self, dt=0.1, tau=5, delta_xy=0, delta_b=4, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1, t_mem=6.1) -> None:
@@ -31,7 +35,7 @@ class TPERotations():
         else:
             self.pt_name = "pt_T{:.1f}K_AE{:.1f}_AHratio{:.2f}_coupl{:.1f}_dt{:.2f}_tmem{:.1f}.ptr".format(self.temperature,self.ae,self.ah_ratio,self.phonon_factor,self.dt,self.t_mem)
         self.full_names = [self.pt_name+"_initial",self.pt_name+"_initial_0", self.pt_name+"_repeated", self.pt_name+"_repeated_0"]
-        self.options = dict({"gamma_e": self.gamma_e,"dt": self.dt,"phonons": self.phonons, "temp_dir": "/mnt/temp_data/", "pt_file": self.pt_name,
+        self.options = dict({"gamma_e": self.gamma_e,"dt": self.dt,"phonons": self.phonons, "temp_dir": temp_dir, "pt_file": self.pt_name,
                              "delta_xy": self.delta_xy, "delta_b": self.delta_b})  # "factor_ah": ah_ratio, "ae": self.ae,
         if os.path.exists(self.full_names[0]):
             print("Warning: pt files already exist")
@@ -47,7 +51,7 @@ class TPERotations():
     #     """
     #     # some pulse, doesnt really matter
     #     p = ChirpedPulse(4, 0, t0=20)
-    #     biexciton(0,40,p, dt=self.dt, prepare_only=True, delta_xy=self.delta_xy, delta_b=self.delta_b, phonons=True, ae=self.ae, temperature=self.temperature, verbose=False, lindblad=True, temp_dir='/mnt/temp_data/', J_to_file="J_omega.dat", factor_ah=self.ah_ratio)
+    #     biexciton(0,40,p, dt=self.dt, prepare_only=True, delta_xy=self.delta_xy, delta_b=self.delta_b, phonons=True, ae=self.ae, temperature=self.temperature, verbose=False, lindblad=True, temp_dir=temp_dir, J_to_file="J_omega.dat", factor_ah=self.ah_ratio)
     #     data = np.loadtxt("J_omega.dat")
     #     omega = data[:,0]
     #     J = data[:,1]

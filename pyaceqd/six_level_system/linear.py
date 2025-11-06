@@ -6,7 +6,7 @@ from pyaceqd.general_system.general_system import system_ace_stream
 from pyaceqd.general_system.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
 
-
+temp_dir = constants.temp_dir
 hbar = constants.hbar  # meV*ps
 d0 = 0.25  # meV
 d1 = 0.12
@@ -25,7 +25,7 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
     E_B = 2.*delta_E - delta_B
     return E_X, E_Y, E_S, E_F, E_B
 
-def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, gamma_d=0, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, gamma_d=0, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_6","|1><1|_6","|2><2|_6","|3><3|_6","|4><4|_6","|5><5|_6"], initial="|0><0|_6", t_mem=20.48, output_dm=False, dressedstates=False, rf=False, rf_file=None,
          firstonly=False,calibration_file=None, print_H=False, use_infinite=True, d0=d0, d1=d1, d2=d2):
     system_prefix = "sixls_linear"

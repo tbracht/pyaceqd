@@ -5,6 +5,8 @@ import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
 import matplotlib.pyplot as plt
 from pyaceqd.constants import hbar
+import pyaceqd.constants as constants
+temp_dir = constants.temp_dir
 
 class PolarizatzionEntanglement():
     def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, 
@@ -66,8 +68,8 @@ class PolarizatzionEntanglement():
         try:
             self.temp_dir = options["temp_dir"]
         except KeyError:
-            print("temp_dir not included in options, setting to /mnt/temp_data/")
-            self.options["temp_dir"] = "/mnt/temp_data/"
+            print("temp_dir not included in options, setting to temp_dir specified in constants")
+            self.options["temp_dir"] = temp_dir
             self.temp_dir = self.options["temp_dir"]
 
         if "pulse_file_x" in self.options or "pulse_file_y" in self.options and self.options["pulse_file_x"] is not None and self.options["pulse_file_y"] is not None:

@@ -8,11 +8,13 @@ import tqdm
 import os
 import subprocess
 import time
-from pyaceqd.constants import hbar
 import pyaceqd.pulsegenerator as pg
+import pyaceqd.constants as constants
+hbar = constants.hbar  # meV*ps
+temp_dir = constants.temp_dir
 
 class RabiRotations():
-    def __init__(self, dt=0.1, tau=5, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1, t_mem=10, temp_dir="/mnt/temp_data/") -> None:
+    def __init__(self, dt=0.1, tau=5, area_max=30, n_area=150, gamma_e=1/100, phonons=False, temperature=4, ae=5, ah_ratio=1.15, J_from_file=None, phonon_factor=1, t_mem=10, temp_dir=temp_dir) -> None:
         self.dt = dt
         self.tau = tau
         self.areas = np.linspace(0, area_max, n_area)
@@ -44,7 +46,7 @@ class RabiRotations():
         """
         # some pulse, doesnt really matter
         p = ChirpedPulse(4, 0, t0=20)
-        tls(0,40,p, dt=self.dt, prepare_only=True, phonons=True, ae=self.ae, temperature=self.temperature, verbose=False, lindblad=True, temp_dir='/mnt/temp_data/', J_to_file="J_omega.dat", factor_ah=self.ah_ratio)
+        tls(0,40,p, dt=self.dt, prepare_only=True, phonons=True, ae=self.ae, temperature=self.temperature, verbose=False, lindblad=True, temp_dir=temp_dir, J_to_file="J_omega.dat", factor_ah=self.ah_ratio)
         data = np.loadtxt("J_omega.dat")
         omega = data[:,0]
         J = data[:,1]

@@ -8,10 +8,12 @@ from concurrent.futures import ThreadPoolExecutor, wait
 import os
 from pyaceqd.timebin import timebin_tl
 import time
+import pyaceqd.constants as constants
+temp_dir = constants.temp_dir
 
 # exemplary options-dict:
 options_example = {"verbose": False, "delta_xd": 4, "gamma_e": 1/65, "lindblad": True,
- "temp_dir": '/mnt/temp_data/', "phonons": False, "pt_file": "tls_dark_3.0nm_4k_th10_tmem20.48_dt0.02.ptr"}
+ "temp_dir": temp_dir, "phonons": False, "pt_file": "tls_dark_3.0nm_4k_th10_tmem20.48_dt0.02.ptr"}
 
 class TwoPhotonTimebinNew(TimeBin):
     def __init__(self, system, sigma_x, sigma_xdag, sigma_b, sigma_bdag, *pulses, dt=0.02, dim=5, tb=800, dt_small=0.1, n_tbig=10, dt_exp=None, simple_exp=True, gaussian_t=None, verbose=False, workers=15, simple_t=False, options={}) -> None:

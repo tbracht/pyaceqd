@@ -8,12 +8,11 @@ import matplotlib.pyplot as plt
 tau = 5
 t0_n = 4.5
 p1 = ChirpedPulse(tau_0=tau, e_start=0, alpha=0, t0=t0_n*tau, e0=9, polar_x=1)
-options = {"verbose": False, "gamma_e": 1/100, "lindblad": True,
- "temp_dir": '/mnt/temp_data/', "phonons": True, "use_infinite": True, "ae": 5, "temperature": 4}
+options = {"verbose": False, "gamma_e": 1/100, "lindblad": True, "phonons": True, "use_infinite": True, "ae": 5, "temperature": 4}
 
 sigma_x = op_to_matrix("|0><1|_2")
 sigma_xdag = op_to_matrix("|1><0|_2")
-a = Indistinguishability(tls, "|0><1|_2", "|1><0|_2", p1, dt=0.1, dt_small=0.1, tb=2000, simple_exp=False, gaussian_t=2*t0_n*tau, verbose=False, workers=15, t_simul=None, options=options, dm=True,
+a = Indistinguishability(tls, "|0><1|_2", "|1><0|_2", p1, dt=0.1, dt_small=0.1, tb=2000, simple_exp=False, gaussian_t=2*t0_n*tau, verbose=False, workers=23, t_simul=None, options=options, dm=True,
                          sigma_x_mat=sigma_x, sigma_xdag_mat=sigma_xdag, t_mem=10)
 
 a.factor_tau = 4

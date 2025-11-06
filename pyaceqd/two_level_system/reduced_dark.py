@@ -8,8 +8,9 @@ from pyaceqd.general_system.general_system import system_ace_stream
 import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
+temp_dir = constants.temp_dir
 
-def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, gamma_e=1/65, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, gamma_e=1/65, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_3","|1><1|_3","|2><2|_3"], initial="|0><0|_3"):
     system_prefix = "tls_dark"
     # |0> = G, |1> = X, |2> = D
@@ -28,7 +29,7 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, gamma_e=1/65, phonons
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
-def darkmodel_photons(t_start, t_end, *pulses, dt=0.1, delta_xd=0, delta_cx=-2, rad_loss=1/100, cav_loss=1/20, cav_coupl=1/30, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def darkmodel_photons(t_start, t_end, *pulses, dt=0.1, delta_xd=0, delta_cx=-2, rad_loss=1/100, cav_loss=1/20, cav_coupl=1/30, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_3 otimes |0><0|_3","|1><1|_3 otimes |0><0|_3","|2><2|_3 otimes |0><0|_3"], initial="|0><0|_3 otimes |0><0|_3"):
     system_prefix = "darkmodel_tls_photons"
     # |0> = G, |1> = X, |2> = D
@@ -51,7 +52,7 @@ def darkmodel_photons(t_start, t_end, *pulses, dt=0.1, delta_xd=0, delta_cx=-2, 
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
-def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, normalize=False, phonons=False, pt_file=None, prepare_only=False):
+def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir=temp_dir, tb=800, normalize=False, phonons=False, pt_file=None, prepare_only=False):
     t,g,x,d = darkmodel(t0,tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file,prepare_only=prepare_only)
     x = np.real(x)
     t = np.real(t)
@@ -60,7 +61,7 @@ def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_
         return rho_ee/gamma_e
     return rho_ee
 
-def G1_ll(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, normalize=False, phonons=False, pt_file=None):
+def G1_ll(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir=temp_dir, tb=800, normalize=False, phonons=False, pt_file=None):
     t,g,x,d = darkmodel(t0,2*tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file)
     x = np.real(x)
     t = np.real(t)
@@ -72,7 +73,7 @@ def G1_ll(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_
         return rho_ee/gamma_e
     return rho_ee
 
-def G1_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, workers=15, normalize=False, simple_exp=False, gaussian_t=None, phonons=False, pt_file=None):
+def G1_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_dir=temp_dir, tb=800, workers=15, normalize=False, simple_exp=False, gaussian_t=None, phonons=False, pt_file=None):
     multitime_op = {"operator": "|1><0|_3","applyFrom": "_right", "applyBefore":"false"}
 
     if gaussian_t is not None:
@@ -99,7 +100,7 @@ def G1_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_dir='
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t) * rho) = |X><X|
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/', "output_ops": ["|0><0|_3","|1><1|_3","|2><2|_3","|0><1|_3"],
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir, "output_ops": ["|0><0|_3","|1><1|_3","|2><2|_3","|0><1|_3"],
                "phonons": phonons, "pt_file": pt_file}
     _G1 = np.zeros([len(t1),len(t2)],dtype=complex)
     tend = 2*tb
@@ -127,7 +128,7 @@ def G1_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_dir='
     os.remove(pulse_file_y)
     return t1,t2,_G1
 
-def G1_easy_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_dir='/mnt/temp_data/', tb=800, t_offset=0, workers=15, normalize=False, simple_exp=False, gaussian_t=None, phonons=False, pt_file=None):
+def G1_easy_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_dir=temp_dir, tb=800, t_offset=0, workers=15, normalize=False, simple_exp=False, gaussian_t=None, phonons=False, pt_file=None):
     multitime_op = {"operator": "|1><0|_3","applyFrom": "_right", "applyBefore":"false"}
 
     if gaussian_t is not None:
@@ -154,7 +155,7 @@ def G1_easy_el(*pulses, t0=0, dt=0.1, dtau=0.05, delta_xd=4, gamma_e=1/65, temp_
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t) * rho) = |X><X|
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/', "output_ops": ["|0><0|_3","|1><1|_3","|2><2|_3","|0><1|_3"],
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir, "output_ops": ["|0><0|_3","|1><1|_3","|2><2|_3","|0><1|_3"],
                "phonons": phonons, "pt_file": pt_file}
     _G1 = np.zeros([len(t1)],dtype=complex)
     with tqdm.tqdm(total=len(t1)) as tq:

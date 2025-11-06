@@ -9,8 +9,9 @@ import sys
 # import io
 
 hbar = constants.hbar  # meV*ps
+temp_dir = constants.temp_dir
 sys.path.append(constants.pybind_path)  # path to pybinds for ACE
-from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap, hbar
+from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap
 
 
 def sanity_checks(system_op,phonons,boson_op,initial,interaction_ops,verbose):
@@ -124,7 +125,7 @@ def read_hamiltonian(data):
         result[:,i] = data[:,2*i+1] + 1j*data[:,2*i+2]
     return result
 
-def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.48, ae=3.0, temperature=1, verbose=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                   multitime_op=None, pulse_file_x=None, pulse_file_y=None, system_prefix="", threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7, \
                   system_op=None, boson_op=None, initial=None, lindblad_ops=None, interaction_ops=None, output_ops=[], prepare_only=False, LO_params=None, dressedstates=False, rf_op=None, rf_file=None, firstonly=False, \
                   J_to_file=None, J_file=None, factor_ah=None, use_infinite=False, print_H=False, calc_dynmap=False, rho0=None, get_M_t=None):

@@ -11,9 +11,9 @@ import pstats
 p1 = ChirpedPulse(tau_0=2.4, e_start=-8, alpha=0, e0=22.65, polar_x=1.0, t0=2*4)
 p2 = ChirpedPulse(tau_0=3, e_start=-19.163, alpha=0, e0=19.29, polar_x=1.0, t0=2*4)
 
-t2,g2,x2,pgx2,pxg2 = tls(0,40,p1,dt=0.02,phonons=True,ae=5.0,temperature=4,prepare_only=True,threshold=8,use_infinite=True)
+t2,g2,x2,pgx2,pxg2 = tls(0,40,p1,dt=0.02,phonons=True,ae=5.0,temperature=4,prepare_only=True,threshold=8,use_infinite=True,temp_dir="/home/bracht/Documents/temp_data/")
 
-# # tls_(0,20,p1,temp_dir="/home/t_brac02/Dokumente/repos/pyaceqd/", phonons=True, prepare_only=True)
+# # tls_(0,20,p1,temp_dir="/home/bracht/Documents/temp_data/", phonons=True, prepare_only=True)
 # t,g,x,pgx,pxg = tls_(0,40,p1,p2,dt=0.02,factor_ah=1.15,phonons=True,J_to_file=True,ae=7.0,temperature=4,prepare_only=False, temp_dir='pyaceqd/tests/')#,multitime_op={"operator": "|1><0|_2","time": 8})
 # t2,g2,x2,pgx2,pxg2 = tls_(0,40,p1,p2,dt=0.02,phonons=True,ae=3.0,temperature=4,prepare_only=False, temp_dir='pyaceqd/tests/')#,multitime_op={"operator": "|1><0|_2","time": 8})
 
@@ -25,10 +25,10 @@ t2,g2,x2,pgx2,pxg2 = tls(0,40,p1,dt=0.02,phonons=True,ae=5.0,temperature=4,prepa
 # plt.xlim(0,15)
 # plt.savefig("tls.png")
 p3 = ChirpedPulse(tau_0=5, e_start=0, alpha=0, e0=15, polar_x=1.0, t0=5*4)
-t,g,x,pgx,pxg = tls(0,40,p3,dt=0.02,phonons=True,ae=5.0,temperature=4,prepare_only=False,threshold=8)#,multitime_op={"operator": "|1><0|_2","time": 8})
-t2,g2,x2,pgx2,pxg2 = tls(0,40,p3,dt=0.02,phonons=True,ae=5.0,temperature=4,prepare_only=False,threshold=8,use_infinite=True)#,multitime_op={"operator": "|1><0|_2","time": 8})
+t,g,x,pgx,pxg = tls(0,40,p3,dt=0.02,phonons=True,ae=5.0,temperature=4,prepare_only=False,threshold=8,temp_dir="/home/bracht/Documents/temp_data/")#,multitime_op={"operator": "|1><0|_2","time": 8})
+t2,g2,x2,pgx2,pxg2 = tls(0,40,p3,dt=0.02,phonons=True,ae=5.0,temperature=4,prepare_only=False,threshold=8,use_infinite=True,temp_dir="/home/bracht/Documents/temp_data/")#,multitime_op={"operator": "|1><0|_2","time": 8})
 
-tls_dressed_states(0,40,p3,dt=0.02,phonons=False,rf=True)
+tls_dressed_states(0,40,p3,dt=0.02,phonons=False,rf=True,temp_dir="/home/bracht/Documents/temp_data/")
 # t2,g2,x2,pgx2,pxg2 =tls_(-0.01,600,p1,dt=0.2,ninterm=10,stream=False,phonons=True,temperature=4,prepare_only=False)#,multitime_op={"operator": "|1><0|_2","time": 8}) # tls_ace(0,20,p1,dt=0.5,phonons=True,temperature=4)# apply_op="|1><0|_2", apply_op_t=8,apply='')
 
 plt.plot(t.real,np.real(x),label="x")

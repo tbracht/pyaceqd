@@ -7,9 +7,10 @@ from concurrent.futures import wait
 from pyaceqd.general_system.general_system import system_ace_stream
 import pyaceqd.constants as constants
 
+temp_dir = constants.temp_dir
 hbar = constants.hbar  # meV*ps
 
-def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4"):
     system_prefix = "darkmodel_"
     # |0> = G, |1> = X, |2> = D, |3> = B
@@ -30,7 +31,7 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/
                   system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
     return result
 
-def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, threshold=8, output_ops=["|0><0|_5","|1><1|_5","|2><2|_5","|3><3|_5","|4><4|_5"], initial="|0><0|_5", use_infinite=True,
                calc_dynmap=False):
     system_prefix = "darkmodel_new_"
@@ -53,7 +54,7 @@ def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_
                   output_ops=output_ops, prepare_only=prepare_only, use_infinite=use_infinite, calc_dynmap=calc_dynmap)
     return result
 
-def darkmodel_photons(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, delta_cx=-2, rad_loss=1/100, cav_loss=1/20, cav_coupl=1/30, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def darkmodel_photons(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, delta_cx=-2, rad_loss=1/100, cav_loss=1/20, cav_coupl=1/30, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes |0><0|_3","|1><1|_4 otimes |0><0|_3","|2><2|_4 otimes |0><0|_3","|3><3|_4 otimes |0><0|_3"], initial="|0><0|_4 otimes |0><0|_3"):
     system_prefix = "darkmodel_photons"
     # |0> = G, |1> = X, |2> = D, |3> = B
@@ -109,7 +110,7 @@ def timebin_integrate(t,tau,f,timebin_width,n_t=1,n_tau=1,debug=False,normalize=
     return t,tau,f,f_t,f_complete
 
 
-def two_photon_density(t0=0, tend=1600, tau0=0, tauend=1600, dt=0.1, dtau=0.1, *pulses, delta_xd=4, delta_b=4, gamma_e=1/65, timebin=800, workers=15, temp_dir='/mnt/temp_data/', coarse_t=True):
+def two_photon_density(t0=0, tend=1600, tau0=0, tauend=1600, dt=0.1, dtau=0.1, *pulses, delta_xd=4, delta_b=4, gamma_e=1/65, timebin=800, workers=15, temp_dir=temp_dir, coarse_t=True):
     options = {"delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "workers": workers, "temp_dir": temp_dir, "coarse_t": coarse_t,
                "t0": t0, "tend": tend, "tau0": tau0, "tauend": tauend, "dt": dt, "dtau": dtau}
     t1,tau1,g2_ee = G2_ee(*pulses, **options)
@@ -118,7 +119,7 @@ def two_photon_density(t0=0, tend=1600, tau0=0, tauend=1600, dt=0.1, dtau=0.1, *
     _,_,_,_,rho_el_el = timebin_integrate(t1,tau1,g2_ee,timebin_width=timebin,n_t=1,n_tau=2)
     return rho_ee_ee,rho_ll_ll,rho_el_el
 
-def G2_ee(*pulses, t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir='/mnt/temp_data/', coarse_t=True):
+def G2_ee(*pulses, t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir=temp_dir, coarse_t=True):
     """
     calculates G2 for assuming an XX-emission triggers the coincidence measurment at time t, following an X at time t+tau, i.e.:
     <sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t)>
@@ -154,7 +155,7 @@ def G2_ee(*pulses, t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, delta_x
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t) * rho) = |X><X|
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/'}
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir}
     _G2 = np.zeros([len(t),len(tau)])
     with tqdm.tqdm(total=len(t)) as tq:
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -181,7 +182,7 @@ def G2_ee(*pulses, t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, delta_x
     os.remove(pulse_file_y)
     return t, tau, _G2
 
-def G2_eeee(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir='/mnt/temp_data/', simple_exp=False, tb=800, gaussian_t=None, normalize=False):
+def G2_eeee(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir=temp_dir, simple_exp=False, tb=800, gaussian_t=None, normalize=False):
     """
     calculates G2 for assuming an XX-emission triggers the coincidence measurment at time t, following an X at time t+tau, i.e.:
     <sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t)>
@@ -219,7 +220,7 @@ def G2_eeee(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t) * rho) = |X><X|
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/', "output_ops": ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4","|0><1|_4","|0><3|_4"]}
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir, "output_ops": ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4","|0><1|_4","|0><3|_4"]}
     _G2 = np.zeros([len(t1)])
     tend = tb
     with tqdm.tqdm(total=len(t1)) as tq:
@@ -256,7 +257,7 @@ def G2_eeee(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
     os.remove(pulse_file_y)
     return t1, _G2
 
-def G2_eell(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir='/mnt/temp_data/', simple_exp=False, tb=800, gaussian_t=None, normalize=False):
+def G2_eell(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir=temp_dir, simple_exp=False, tb=800, gaussian_t=None, normalize=False):
     # note that dtau is used for dt in the actual propagation
     # t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     # n_tau = int((tauend-tau0)/dtau)
@@ -295,7 +296,7 @@ def G2_eell(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger_XX(t) sigma^dagger_X(t+tau) sigma_x(t+tau) sigma_xx(t) * rho) = |X><X|
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/', "output_ops": ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4","|0><1|_4","|0><3|_4"]}
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir, "output_ops": ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4","|0><1|_4","|0><3|_4"]}
     _G2 = np.zeros([len(t1),len(t1),len(t3)], dtype=complex)  # G2(t1,t2,t3)  # G2(t1,t2,tau1,tau2)
     for i in tqdm.trange(len(t1),leave=None):
         # tau1: use the interval 0,...,tb-t1
@@ -360,7 +361,7 @@ def G2_eell(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
     return t1,t3,_G2
 
 
-def G2_eell_easy(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir='/mnt/temp_data/', simple_exp=False, t_sep=800, tb=800, gaussian_t=None):
+def G2_eell_easy(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir=temp_dir, simple_exp=False, t_sep=800, tb=800, gaussian_t=None):
     # note that dtau is used for dt in the actual propagation
     # t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     # n_tau = int((tauend-tau0)/dtau)
@@ -388,7 +389,7 @@ def G2_eell_easy(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e
     export_csv(pulse_file_x, _t_pulse, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
     export_csv(pulse_file_y, _t_pulse, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/', "output_ops": ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4","|0><1|_4","|0><3|_4"]}
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir, "output_ops": ["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4","|0><1|_4","|0><3|_4"]}
     _G2 = np.zeros([len(t1),len(t1)], dtype=complex)  # G2(t1,t2)
     for i in tqdm.trange(len(t1),leave=None):
         # tau1: use the interval 0,...,tb-t1
@@ -446,7 +447,7 @@ def G2_eell_easy(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e
     os.remove(pulse_file_y)
     return t1,_G2
 
-def G2_lele(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir='/mnt/temp_data/', simple_exp=False, tb=800, gaussian_t=None):
+def G2_lele(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65, workers=15, temp_dir=temp_dir, simple_exp=False, tb=800, gaussian_t=None):
     # note that dtau is used for dt in the actual propagation
     # t = np.linspace(t0, tend, int((tend-t0)/dt)+1)
     # n_tau = int((tauend-tau0)/dtau)
@@ -473,7 +474,7 @@ def G2_lele(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
     export_csv(pulse_file_x, _t_pulse, pulse_x.real, pulse_x.imag, precision=8, delimit=' ')
     export_csv(pulse_file_y, _t_pulse, pulse_y.real, pulse_y.imag, precision=8, delimit=' ')
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/', "output_ops": ["|3><3|_4"]}
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir, "output_ops": ["|3><3|_4"]}
     
     futures = []
     n_tau = int(tb/dtau)
@@ -510,7 +511,7 @@ def G2_lele(*pulses, t0=0, dt=0.1, dtau=0.1, delta_xd=4, delta_b=4, gamma_e=1/65
     return t1,t2,_G2    
 
 
-def G2_b(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, *pulses, delta_xd=0, delta_b=4, gamma_e=1/100, workers=15, temp_dir='/mnt/temp_data/', coarse_t=True):
+def G2_b(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, *pulses, delta_xd=0, delta_b=4, gamma_e=1/100, workers=15, temp_dir=temp_dir, coarse_t=True):
     """
     calculates G2 for the xx->g emission. This is not a 'real' G2 function, as it directly uses 2-photon emission.
     for every t1 in t, propagate to t1, then
@@ -549,7 +550,7 @@ def G2_b(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.1, *pulses, delta_xd
     # all 4 operators are applied at the same time.
     # G2(t,0) = Tr(sigma^dagger * sigma * sigma * rho(t) * sigma^dagger) = 0, as is sigma*sigma always zero.
     options = {"dt": dtau, "verbose": False, "delta_xd": delta_xd, "delta_b": delta_b, "gamma_e": gamma_e, "lindblad": True,
-               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": '/mnt/temp_data/'}
+               "pulse_file_x": pulse_file_x, "pulse_file_y": pulse_file_y, "temp_dir": temp_dir}
     _G2 = np.zeros([len(t),len(tau)])
     with tqdm.tqdm(total=len(t)) as tq:
         with ThreadPoolExecutor(max_workers=workers) as executor:

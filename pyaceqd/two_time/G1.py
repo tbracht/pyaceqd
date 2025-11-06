@@ -7,9 +7,12 @@ from concurrent.futures import wait
 from pyaceqd.two_level_system.tls import tls
 from pyaceqd.pulses import ChirpedPulse
 
-HBAR = 0.6582119514  # meV ps
+import pyaceqd.constants as constants
 
-def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **ops):
+HBAR = constants.hbar  # meV ps
+temp_dir = constants.temp_dir
+
+def G1_twols(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.5, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir=temp_dir, coarse_t=False, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4, **ops):
     # pulse file generation
     _t_pulse = np.arange(t0,tend+tauend+dtau,step=dtau)
     print(_t_pulse[0],_t_pulse[1],_t_pulse[-1])
@@ -85,7 +88,7 @@ def G1_general(t0=0, tend=600, tau0=0, tauend=600, dt=0.1, dtau=0.02, *pulses, s
             _G1[i,1:] = futures[i][2][-n_tau:]  # the last n_tau values
     return t, tau, _G1
 
-def pulsed_mollow_tls_pulses(pulse, areas, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4):
+def pulsed_mollow_tls_pulses(pulse, areas, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir=temp_dir,save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False, factor_tau=4):
     n_tau = int((tauend)/dtau)
     tau_axis = np.linspace(0, tauend, n_tau + 1)
     spectrums = np.zeros([len(areas),2*len(tau_axis)-1])
@@ -113,7 +116,7 @@ def pulsed_mollow_tls_pulses(pulse, areas, tend=500, tauend=500, dt=0.2, dtau=0.
             np.save(save_dir+"z"+_name,spectrums)
     return np.fft.fftshift(fft_freqs), areas, spectrums
 
-def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False, **ops):
+def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir=temp_dir,save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False, **ops):
     n_tau = int((tauend)/dtau)
     tau_axis = np.linspace(0, tauend, n_tau + 1)
     spectrums = np.zeros([len(areas),2*len(tau_axis)-1])
@@ -156,7 +159,7 @@ def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2
             np.save(save_dir+"z"+_name,spectrums)
     return np.fft.fftshift(fft_freqs), areas, spectrums
 
-def pulsed_mollow_energy(pulse_tau, detunings, area=3, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir='/mnt/temp_data/',save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False):
+def pulsed_mollow_energy(pulse_tau, detunings, area=3, tend=500, tauend=500, dt=0.2, dtau=0.02, gamma_e=1/100, ae=3.0, temperature=4, phonons=False, pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", workers=7, temp_dir=temp_dir,save_dir=None, prepare_only=False, simple_exp=False, gaussian_t=False):
     n_tau = int((tauend)/dtau)
     tau_axis = np.linspace(0, tauend, n_tau + 1)
     spectrums = np.zeros([len(detunings),2*len(tau_axis)-1])
@@ -182,7 +185,7 @@ def pulsed_mollow_energy(pulse_tau, detunings, area=3, tend=500, tauend=500, dt=
             np.save(save_dir+"z"+_name,spectrums)
     return np.fft.fftshift(fft_freqs), detunings, spectrums
 
-def simple_vhom(tend=600, tauend=600, dt=0.1, dtau=0.02, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir='/mnt/temp_data/', coarse_t=False, prepare_only=False):
+def simple_vhom(tend=600, tauend=600, dt=0.1, dtau=0.02, *pulses, ae=3.0, temperature=4, gamma_e=1/100, phonons=False, pt_file=None, workers=10, temp_dir=temp_dir, coarse_t=False, prepare_only=False):
     # not tested
     output_ops = ["|1><1|_2"]
     options = {"gamma_e": gamma_e, "phonons": phonons, "ae": ae, "temperature": temperature, "lindblad": True, "pt_file": pt_file, "temp_dir": temp_dir,

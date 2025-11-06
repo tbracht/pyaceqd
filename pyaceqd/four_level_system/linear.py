@@ -3,8 +3,9 @@ from pyaceqd.general_system.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
+temp_dir = constants.temp_dir
 
-def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False,
                use_infinite=False, calc_dynmap=False):
     system_prefix = "b_linear"
@@ -41,7 +42,7 @@ def biexciton_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_l
     dim = 4
     return dressed_states(biexciton, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
 
-def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton_photons(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=None, initial=None,
                 t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False, n_phot1=1, n_phot2=1):
     n1 = n_phot1 + 1
@@ -107,7 +108,7 @@ def biexciton_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=N
     dim = [4,n1,n2]
     return dressed_states(biexciton_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
 
-def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton_photons_extended(t_start, t_end, *pulses, dt=0.5, delta_xy=0, delta_b=4, gamma_e=1/100, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_18 + |1><1|_18 + |2><2|_18 + |3><3|_18 + |4><4|_18 + |5><5|_18","|6><6|_18 + |7><7|_18 + |8><8|_18 + |9><9|_18","|10><10|_18 + |11><11|_18 + |12><12|_18 + |13><13|_18","|14><14|_18 + |15><15|_18 + |16><16|_18 + |17><17|_18"], initial="|0><0|_18",
                t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     system_prefix = "b_linear_cavity_extended"
@@ -157,7 +158,7 @@ def biexciton_photons_extended_dressed_states(t_start, t_end, *pulses, plot=True
     dim = 18
     return dressed_states(biexciton_photons_extended, dim, t_start, t_end, *pulses, filename=filename, t_lim=t_lim, e_lim=e_lim, plot=plot, firstonly=firstonly, colors=None, visible_states=visible_states, **options)
 
-def biexciton_sensors(t_start, t_end, *pulses, dt=0.1, delta_xy=0, shift_x=True, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def biexciton_sensors(t_start, t_end, *pulses, dt=0.1, delta_xy=0, shift_x=True, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4 otimes Id_2 otimes Id_2","|1><1|_4 otimes Id_2 otimes Id_2","|2><2|_4 otimes Id_2 otimes Id_2","|3><3|_4 otimes Id_2 otimes Id_2"], initial="|0><0|_4 otimes |0><0|_2 otimes |0><0|_2", t_mem=12.8, dressedstates=False, rf=False, rf_file=None, firstonly=False):
     system_prefix = "b_linear_sensor"
     # |0> = G, |1> = X, |2> = Y, |3> = B

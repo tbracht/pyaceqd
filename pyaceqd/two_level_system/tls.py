@@ -11,8 +11,9 @@ from pyaceqd.general_system.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
+temp_dir = constants.temp_dir
 
-def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
              dephasing=None, J_to_file=None, J_file=None, factor_ah=None, use_infinite=True, threshold=8, calc_dynmap=False, rho0=None, e_x=0, get_M_t=None, initial="|0><0|_2", **options):
     """
@@ -85,7 +86,7 @@ def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=Non
     dim = 2
     return dressed_states(tls, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
 
-def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, temperature=1, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, delta_s2=0, epsilon=0.0001, linewidth1=0.01, linewidth2=None, temperature=1, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2 otimes Id_2","|1><1|_2 otimes Id_2 otimes Id_2"], initial=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, calc_dynmap=False, use_infinite=False, get_M_t=None):
     system_prefix = "tls_two_sensor"
     system_op = []
@@ -122,7 +123,7 @@ def tls_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False
                   firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap, get_M_t=get_M_t)
     return result
 
-def tls_one_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, epsilon=0.0001, linewidth1=0.01, temperature=1, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls_one_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=10, ae=3.0, delta_s1=0, epsilon=0.0001, linewidth1=0.01, temperature=1, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, prepare_only=False, output_ops=["|0><0|_2 otimes Id_2","|1><1|_2 otimes Id_2"], initial=None, dressedstates=False, 
          rf=False, rf_file=None, firstonly=False, calc_dynmap=False, use_infinite=False, get_M_t=None):
     system_prefix = "tls_one_sensor"
@@ -155,7 +156,7 @@ def tls_one_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False
                   firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap, get_M_t=get_M_t)
     return result
 
-def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, cav_coupl2=None, cav_loss2=None, delta_cx2=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls_photons(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, cav_coupl2=None, cav_loss2=None, delta_cx2=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, n_phot1=2, n_phot2=2, laser_cav_coupl=None, pulse_file=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None):
     n1 = n_phot1 + 1
     n2 = n_phot2 + 1
@@ -210,7 +211,7 @@ def tls_photons_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e
     dim = [2,n1,n2]
     return dressed_states(tls_photons, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=None, visible_states=visible_states,print_states=print_states, **options)
 
-def tls_photon(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls_photon(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, n_phot1=2, laser_cav_coupl=None, pulse_file_x=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None, use_infinite=True, calc_dynmap=False, rho0=None, **options):
     n1 = n_phot1 + 1
     system_prefix = "tls_cavity"
@@ -248,7 +249,7 @@ def tls_photon(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, 
                   firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0)
     return result
 
-def tls_photon_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, delta_s1=0, epsilon=0.0001, linewidth1=0.01,  t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls_photon_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, delta_s1=0, epsilon=0.0001, linewidth1=0.01,  t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, n_phot1=2, laser_cav_coupl=None, pulse_file_x=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None, use_infinite=True, calc_dynmap=False,**options):
     n1 = n_phot1 + 1
     system_prefix = "tls_cavity_sensor"
@@ -294,7 +295,7 @@ def tls_photon_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1
                   firstonly=firstonly, use_infinite=use_infinite, calc_dynmap=calc_dynmap)
     return result
 
-def tls_photon_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, delta_s1=0, delta_s2=None, epsilon=0.0001, linewidth1=0.01, linewidth2=None, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir='/mnt/temp_data/', pt_file=None, suffix="", \
+def tls_photon_two_sensor(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, cav_coupl1=0.06, cav_loss1=0.12/hbar, delta_cx1=-2, phonons=False, delta_s1=0, delta_s2=None, epsilon=0.0001, linewidth1=0.01, linewidth2=None, t_mem=10, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, n_phot1=2, laser_cav_coupl=None, pulse_file_x=None, prepare_only=False, output_ops=None, dressedstates=False, rf=False, rf_file=None, firstonly=False, initial=None, use_infinite=True, **options):
     n1 = n_phot1 + 1
     if delta_s2 is None:

@@ -1,6 +1,8 @@
 import numpy as np
 from pyaceqd.tools import export_csv
 import os
+import pyaceqd.constants as constants
+temp_dir = constants.temp_dir
 
 class TimeBin():
     def __init__(self, system, *pulses, dt=0.02, tb=800, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}) -> None:
@@ -16,8 +18,8 @@ class TimeBin():
         try:
             self.temp_dir = options["temp_dir"]
         except KeyError:
-            print("temp_dir not included in options, setting to /mnt/temp_data/")
-            self.options["temp_dir"] = "/mnt/temp_data/"
+            print("temp_dir not included in options, setting to temp_dir specified in constants")
+            self.options["temp_dir"] = temp_dir
             self.temp_dir = self.options["temp_dir"]
         if not "pulse_file_x" in self.options or not "pulse_file_y" in self.options or self.options["pulse_file_x"] is None and self.options["pulse_file_y"] is None:
             self.prepare_pulsefile(verbose=verbose, t_simul=t_simul)

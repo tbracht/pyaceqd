@@ -20,6 +20,8 @@ except ImportError:
 import time
 # import warnings
 # warnings.filterwarnings('error', category=np.ComplexWarning)
+import pyaceqd.constants as constants
+temp_dir = constants.temp_dir
 
 class Purity(TimeBin):
     def __init__(self, system, sigma_x, sigma_xdag, *pulses, dt=0.1, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}, factor_t=1, factor_tau=2, dt_big=None, add_tend=True) -> None:
@@ -823,7 +825,7 @@ class Indistinguishability(Purity):
 # t0_n = 4.5
 # p1 = ChirpedPulse(tau_0=tau, e_start=0, alpha=0, t0=t0_n*tau, e0=1, polar_x=1)
 # options = {"verbose": False, "gamma_e": 1/100, "lindblad": True,
-#  "temp_dir": '/mnt/temp_data/', "phonons": False}
+#  "temp_dir": temp_dir, "phonons": False}
 
 # def resample(x, y, z, s_x, s_y):
 #     x_new = np.zeros(int((len(x))/s_x))
@@ -1005,7 +1007,7 @@ class Indistinguishability(Purity):
 
 
 # options = {"verbose": False, "gamma_e": 1/100, "lindblad": True,
-#  "temp_dir": '/mnt/temp_data/', "phonons": False}
+#  "temp_dir": temp_dir, "phonons": False}
 # dtaus = 0.5
 # tau_max = 20
 # tau_min = 2
