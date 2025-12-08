@@ -2,16 +2,36 @@ from asyncio import futures
 import subprocess
 import numpy as np
 import os
-from pyaceqd.tools import export_csv, construct_t
+from pyaceqd.tools import export_csv, construct_t, ketbra
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
 from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.general_system_new import system_ace, GeneralSystemACE
 from pyaceqd.general_system.general_dressed_states import dressed_states
+from pyaceqd.general_system.general_dressed_states_new import dressed_states_new
+import warnings
 import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
 temp_dir = constants.temp_dir
+
+class TlS_(GeneralSystemACE):
+    def __init__(self, dt=0.1, gamma_e=1/100, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, J_to_file=None, J_file=None, factor_ah=None, pt_dir=""):
+        system_prefix = "tls" 
+        threshold = "8"  # threshold for PT generation
+        boson_e_max = 7  # maximum boson energy in meV
+        system_op = ["0*|1><1|_2"]  # system hamiltonian operator. Use rotating frame where E_X = 0
+        boson_op = "|1><1|_2"  # operator that couples to phonons
+        lindblad_ops = [["|0><1|_2", gamma_e]]  # decay of excited state to ground state
+        modes = {"x": ketbra(1,0,2)}  # operator |1><0|_2 couples to x-polarized light
+        rf_op = ketbra(1,1,2)  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
+        initial = "|0><0|_2"  # initial state of the system
+        super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
+                          threshold=threshold, boson_e_max=boson_e_max, system_op=system_op, modes=modes, rf_op=rf_op,
+                          boson_op=boson_op, lindblad_ops=lindblad_ops, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir)
+        
+
 
 def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
@@ -75,6 +95,55 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
                   firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0,get_M_t=get_M_t)
     return result
+
+def tls_new(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, pt_file=None, \
+         multitime_op=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, dressedstates=False, rf=False, rf_array=None, firstonly=False,\
+             dephasing=None, J_to_file=None, J_file=None, factor_ah=None, threshold=8, calc_dynmap=False, rho0=None, e_x=0, get_M_t=None, initial="|0><0|_2", print_H=False, **options):
+    system_prefix = "tls"
+    system_op = None
+    if e_x != 0:
+        system_op = ["({}*|1><1|_2)".format(e_x)]
+    boson_op = "{:.3f}*|1><1|_2".format(phonon_factor)
+    # initial = "|0><0|_2"
+    lindblad_ops = []
+    if lindblad:
+        lindblad_ops = [["|0><1|_2",gamma_e]]
+    if dephasing is not None:
+        lindblad_ops.append(["|0><0|_2-|1><1|_2", dephasing])
+        # lindblad_ops.append(["-|1><1|_2", dephasing])
+    # note that the TLS uses x-polar
+    modes = {"x": ketbra(1,0,2)}
+    for p in pulses:
+        pol = getattr(p, "polarization", None)
+        if pol is None:
+            warnings.warn("Pulse object missing 'polarization' attribute; skipping interaction_op assignment.", UserWarning)
+            continue
+        if pol not in modes:
+            warnings.warn(f"Pulse polarization '{pol}' not found in modes; available: {list(modes.keys())}. Skipping interaction_op assignment.", UserWarning)
+            continue
+        p.interaction_op = modes[pol]
+    
+    # rotating frame of pulse
+    rf_op = None
+    if rf:
+        rf_op = ketbra(1,1,2)
+
+    result = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, \
+                  multitime_op=multitime_op, system_prefix=system_prefix, threshold=str(int(threshold)), boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, output_ops=output_ops, prepare_only=prepare_only, rf_op=rf_op, rf_array=rf_array,
+                  firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah,calc_dynmap=calc_dynmap, rho0=rho0, print_H=print_H)
+    return result
+
+def tls_dressed_states_new(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, colors=["#0000FF", "#FF0000"], visible_states=None, return_eigenvectors=False, **options):
+    """
+    e_lim limits the energy range of the plot
+    visible_states is a list of states that are plotted. if None, all states are plotted
+    can also pass RGBA colors, to achieve the same effect as visible_states: for example ["#0000FF00", "#FF0000FF"]
+    """
+    # dim = 2 for TLS
+    dim = 2
+    return dressed_states_new(tls_new, dim, t_start, t_end, *pulses, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, firstonly=firstonly, colors=colors, visible_states=visible_states, return_eigenvectors=return_eigenvectors, **options)
+
 
 def tls_dressed_states(t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="tls_dressed", firstonly=False, colors=["#0000FF", "#FF0000"], visible_states=None, return_eigenvectors=False, **options):
     """

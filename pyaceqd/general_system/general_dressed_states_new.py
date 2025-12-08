@@ -23,12 +23,23 @@ def select_equally_spaced_colors(n):
     
     return colors
 
-def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, print_states=None, no_pulse=False, **options):
-    options["output_ops"] = output_ops_dm(dim)
+def compose_dm_new(outputs, dim=2):
+    """
+    composes a density matrix from the output of ACE, with every output-array being the time dynamics for the corresponding output operator
+    """
+    # dim is the dimension of the system
+    rho = np.zeros((len(outputs[0]),dim,dim),dtype=np.complex128)
+    for i in range(len(outputs[0])):
+        rho[i] = np.reshape(outputs[1:,i], (dim,dim))
+    t = np.real(outputs[0])
+    return t, rho
+
+def dressed_states_new(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, e_lim=None, filename="dressed", firstonly=False, colors=None, visible_states=None, return_eigenvectors=False, print_states=None, no_pulse=False, **options):
+    options["output_ops"] = []
     # firstonly is not used when calculating the density matrix, only for the composition of the dressed states
     # rho is the density matrix that is later transformed
-    _,rho = compose_dm(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
-    options["dressedstates"] = True
+    _,rho = compose_dm_new(system(t_start, t_end, *pulses, **options), dim=np.prod(dim))
+    options["print_H"] = True
     options["firstonly"] = firstonly
     if no_pulse:
         # the 'no_pulse' option can be used if the underlying
@@ -38,14 +49,13 @@ def dressed_states(system, dim, t_start, t_end, *pulses, plot=True, t_lim=None, 
         # the diagonalization.
         pulses = []
     # data is used to calculate the dressed states
-    data = system(t_start, t_end, *pulses, **options)
+    t, H_total = system(t_start, t_end, *pulses, **options)
     if colors is None:
         colors = select_equally_spaced_colors(n=np.prod(dim))
-    return _dressed_states(dim=dim, data=data, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states, return_eigenvectors=return_eigenvectors, print_states=print_states)
+    return _dressed_states(t=t, Htot=H_total, dim=dim, rho=rho, colors=colors, filename=filename, plot=plot, t_lim=t_lim, e_lim=e_lim, visible_states=visible_states, return_eigenvectors=return_eigenvectors, print_states=print_states)
 
-def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None, return_eigenvectors=False, print_states=None):
+def _dressed_states(t, Htot, dim, rho, colors, filename, plot=False, t_lim=None, e_lim=None, visible_states=None, return_eigenvectors=False, print_states=None):
     _dim = np.prod(dim)
-    t = data[0].real
     if plot:
         plt.clf()
         plt.ylim(-0.1,1.1)
@@ -61,13 +71,9 @@ def _dressed_states(dim, data, rho, colors, filename, plot=False, t_lim=None, e_
         plt.clf()
     e_vectors = np.zeros((len(t),_dim,_dim),dtype=np.complex128)
     e_values = np.zeros((len(t),_dim))
-    for i in range(_dim):
-        e_values[:,i] = data[i+1].real
-    for i in range(_dim):
-        for j in range(_dim):
-            # eigenvectors are stored in the following order:
-            # 1st EV: 1st component of 1st EV, 2nd component of 1st EV, ...
-            e_vectors[:,i,j] = data[_dim+1+i*_dim+j]
+
+    for i in range(len(t)):
+        e_values[i], e_vectors[i] = np.linalg.eigh(Htot[i])
     
     # first fix the phase of the eigenvectors
     for i in range(len(t)):

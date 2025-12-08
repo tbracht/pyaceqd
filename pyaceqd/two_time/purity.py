@@ -41,7 +41,6 @@ class Purity(TimeBin):
         if dt_big is None:
                 dt_big = 10*dt_small
         if self.gaussian_t is not None:
-            
             self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tb,dt_small,dt_big,*pulses,decimals=1,exp_part=self.simple_exp,add_tend=add_tend)
             # _t = np.concatenate((_t,self.tb-_t))
             # sort and remove duplicates
@@ -193,13 +192,14 @@ class Purity(TimeBin):
         dt = self.dt
         tb = self.tb
         n_1 = int(0.5*tb/dt)
-        G21 = 2*np.trapz(g2[:n_1], t[:n_1])
-        G22 = np.trapz(g2[n_1:3*n_1], t[n_1:3*n_1])
+        G21 = 2*np.trapezoid(g2[:n_1], t[:n_1])
+        G22 = np.trapezoid(g2[n_1:3*n_1], t[n_1:3*n_1])
         return 1-G21/G22
 
 class Indistinguishability(Purity):
     def __init__(self, system, sigma_x, sigma_xdag, *pulses, dt=0.1, tb=800, dt_small=0.1, simple_exp=True, gaussian_t=None, verbose=False, workers=15, t_simul=None, options={}, dm=False, sigma_x_mat=None, sigma_xdag_mat=None, t_mem=10, dt_big=None, add_tend=True) -> None:
         self.pulses = pulses
+        self.pulses_single = pulses
         self.dm = dm
         self.tl_map = None
         self.tl_dms = None
@@ -254,7 +254,7 @@ class Indistinguishability(Purity):
         # plt.clf()
         # integrate over t1
         # return t2, self.t_axis_complete, _G1
-        G1 = np.trapz(np.abs(_G1)**2, t_axis_complete, axis=0)
+        G1 = np.trapezoid(np.abs(_G1)**2, t_axis_complete, axis=0)
         return t2, G1
     
     def simple_propagation(self, return_whole=False):
@@ -277,7 +277,7 @@ class Indistinguishability(Purity):
             # Calculate product for this slice directly
             product = val[:len(val_shifted)] * val_shifted
             # Integrate this slice
-            G0_tau[j] = np.trapz(product, t1[:len(val_shifted)])
+            G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
         
         # G0 = np.zeros([len(t1), len(t2)])
         # # the following loop can efficiently implemented using numpy
@@ -288,7 +288,7 @@ class Indistinguishability(Purity):
         # i_indices, j_indices = np.ogrid[:len(t1), :len(t2)]
         # G0 = val[i_indices] * val[i_indices + j_indices]
         # # integrate over t1
-        # G0_tau = np.trapz(G0, t1, axis=0)
+        # G0_tau = np.trapezoid(G0, t1, axis=0)
         # if return_whole:
         #     return t1, t2, G0
         return t2, G0_tau
@@ -332,7 +332,7 @@ class Indistinguishability(Purity):
         # i_indices, j_indices = np.ogrid[:len(t1), :len(t2)]
         # G0 = val[i_indices] * val[i_indices + j_indices]
         # # integrate over t1
-        # G0_tau = np.trapz(G0, t1, axis=0)
+        # G0_tau = np.trapezoid(G0, t1, axis=0)
 
         # More memory efficient version using views
         # this is in principle similar as calculating
@@ -344,7 +344,7 @@ class Indistinguishability(Purity):
             # Calculate product for this slice directly
             product = val[:len(val_shifted)] * val_shifted
             # Integrate this slice
-            G0_tau[j] = np.trapz(product, t1[:len(val_shifted)])
+            G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
         return t2, G0_tau
     
     def simple_propagation_tl_phonons(self, return_whole=False):
@@ -389,7 +389,7 @@ class Indistinguishability(Purity):
             # Calculate product for this slice directly
             product = val[:len(val_shifted)] * val_shifted
             # Integrate this slice
-            G0_tau[j] = np.trapz(product, t1[:len(val_shifted)])
+            G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
         return t2, G0_tau
 
     def get_tl(self, t_mem=None):
@@ -402,7 +402,7 @@ class Indistinguishability(Purity):
         # _options["pulse_file_x"] = self.pulse_file_x
         # _options["pulse_file_y"] = self.pulse_file_y
        
-        result, dm = self.system(0, tend, multitime_op=[], calc_dynmap=True, **self.options)
+        result, dm = self.system(0, tend, *self.pulses_single, multitime_op=[], calc_dynmap=True, **self.options)
         _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
@@ -415,7 +415,17 @@ class Indistinguishability(Purity):
     def get_tl_phonons(self, mtos=[], t_mtos=[]):
         tmem = self.gaussian_t + self.t_mem
         tend = 2.1*tmem
-        result, dm = self.system(0, tend, multitime_op=mtos, calc_dynmap=True, **self.options)
+        # print(self.pulses_single)
+        result, dm = self.system(0, tend, *self.pulses_single, multitime_op=mtos, calc_dynmap=True, **self.options)
+        # print(t_mtos)
+        # if len(t_mtos)>0 and t_mtos[0] == 20.0:
+        #     print("Calculated dynamical maps for time-local phonon dynamics.")
+        #     print("result shape: ", np.array(result).shape)
+        #     plt.plot(result[0], result[1].real)
+        #     plt.xlabel("t")
+        #     plt.ylabel("Re[rho_gg(t)]")
+        #     plt.savefig("rho_gg_tl_phonons.png")
+        #     plt.clf()
         _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
@@ -478,7 +488,7 @@ class Indistinguishability(Purity):
             mto_new = mto.copy()
             mto_new["time"] = t_mto
             mtos_new.append(mto_new)
-        result, dm = self.system(0, t_mto + self.gaussian_t + self.t_mem + 2*self.dt, multitime_op=mtos_new, calc_dynmap=True,suffix=suffix, **self.options)
+        result, dm = self.system(0, t_mto + self.gaussian_t + self.t_mem + 2*self.dt, *self.pulses_single, multitime_op=mtos_new, calc_dynmap=True,suffix=suffix, **self.options)
         _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
@@ -496,7 +506,7 @@ class Indistinguishability(Purity):
             mto_new["time"] = t_mto
             mtos_new.append(mto_new)
         t_end = self.gaussian_t + 2 * self.t_mem + 2*self.dt
-        result, dm = self.system(0, t_end, multitime_op=mtos_new, calc_dynmap=True, suffix=suffix, **self.options)
+        result, dm = self.system(0, t_end, *self.pulses_single, multitime_op=mtos_new, calc_dynmap=True, suffix=suffix, **self.options)
         _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
@@ -539,7 +549,7 @@ class Indistinguishability(Purity):
             futures = []
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 for i in range(len(t_mem_indices)):
-                    _t_mto = self.t1[i]
+                    _t_mto = np.round(self.t1[i],6)
                     _e = executor.submit(self.get_dm2_phonons_advanced,[_mto], _t_mto, i)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
@@ -640,7 +650,7 @@ class Indistinguishability(Purity):
 
         
         #return tau, self.t_axis_complete, G1
-        g1 = np.trapz(np.abs(G1)**2, self.t_axis_complete, axis=0)
+        g1 = np.trapezoid(np.abs(G1)**2, self.t_axis_complete, axis=0)
         return tau, g1
     
     def G2_tl_phonons(self):
@@ -741,7 +751,7 @@ class Indistinguishability(Purity):
         G2 = propagate_tau_module.calc_onetime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
         #end_time = time.time()
         #print(f"Time taken for tl_two_op_two_time with dm: {end_time - start_time:.2f} seconds")
-        g2 = np.trapz(np.abs(G2), self.t_axis_complete, axis=0)
+        g2 = np.trapezoid(np.abs(G2), self.t_axis_complete, axis=0)
         return tau, g2
     
     def G1_tl(self):
@@ -770,7 +780,7 @@ class Indistinguishability(Purity):
         G1 = propagate_tau_module.calc_onetime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
         #end_time = time.time()
         #print(f"Time taken for tl_two_op_two_time with dm: {end_time - start_time:.2f} seconds")
-        g1 = np.trapz(np.abs(G1)**2, self.t_axis_complete, axis=0)
+        g1 = np.trapezoid(np.abs(G1)**2, self.t_axis_complete, axis=0)
         return tau, g1
 
     def calc_indistinguishability(self):
@@ -790,8 +800,8 @@ class Indistinguishability(Purity):
         dt = self.dt
         tb = self.tb
         n_1 = int(0.5*tb/dt)
-        G11 = 2*np.trapz(g1[:n_1], t[:n_1])
-        G12 = np.trapz(g1[n_1:3*n_1], t[n_1:3*n_1])
+        G11 = 2*np.trapezoid(g1[:n_1], t[:n_1])
+        G12 = np.trapezoid(g1[n_1:3*n_1], t[n_1:3*n_1])
         # print("G11", G11, "G12", G12)
 
         if self.dm:
@@ -801,8 +811,8 @@ class Indistinguishability(Purity):
                 t2,g2 = self.G2_tl()
         else:
             t2,g2 = self.G2()
-        G21 = 2*np.trapz(g2[:n_1], t2[:n_1])
-        G22 = np.trapz(g2[n_1:3*n_1], t2[n_1:3*n_1])
+        G21 = 2*np.trapezoid(g2[:n_1], t2[:n_1])
+        G22 = np.trapezoid(g2[n_1:3*n_1], t2[n_1:3*n_1])
         # print("G21", G21, "G22", G22)
 
         if self.dm:
@@ -814,8 +824,8 @@ class Indistinguishability(Purity):
             t0,g0 = self.simple_propagation()
         # special, integrate 0,...,tb and tb,...,2tb
         # n_2 = int(tb/dt)
-        G01 = 2*np.trapz(g0[:n_1], t0[:n_1])
-        G02 = np.trapz(g0[n_1:3*n_1], t0[n_1:3*n_1])
+        G01 = 2*np.trapezoid(g0[:n_1], t0[:n_1])
+        G02 = np.trapezoid(g0[n_1:3*n_1], t0[n_1:3*n_1])
         # print("G01", G01, "G02", G02)
 
         result = (G01-G11+G21)/(G02-G12+G22)
@@ -977,8 +987,8 @@ class Indistinguishability(Purity):
 
 # # print(t[:n_1])
 # # print(t[n_1:3*n_1])
-# G21 = 2*np.trapz(g2[:n_1], t[:n_1])
-# G22 = np.trapz(g2[n_1:3*n_1], t[n_1:3*n_1])
+# G21 = 2*np.trapezoid(g2[:n_1], t[:n_1])
+# G22 = np.trapezoid(g2[n_1:3*n_1], t[n_1:3*n_1])
 # print(G21)
 # print(G22)
 # print(1-G21/G22)

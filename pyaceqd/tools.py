@@ -6,6 +6,20 @@ from functools import wraps
 from typing import Optional
 import matplotlib.pyplot as plt
 
+def ketbra(i,j, dim):
+    """
+    returns the operator |i><j| for a system with dimension dim
+    """
+    op = np.zeros((dim,dim))
+    op[i,j] = 1.0
+    return op
+
+def cron(a,b):
+    """
+    kronocker product of two arrays a and b
+    """
+    return np.kron(a,b)
+
 def _merge_intervals(intervals):
     """
     assumes intervals sorted by their respective start-value.
@@ -110,10 +124,17 @@ def round_to_dt(t, dt):
     """
     rounds the time array t to the nearest multiple of dt
     """
-    result = np.round(t/dt)*dt
+    # Handle both scalar and array inputs
+    is_scalar = np.isscalar(t)
+    t_array = np.atleast_1d(t)
+    
+    result = np.round(t_array/dt)*dt
     # remove duplicates that can occur due to rounding
     _, idx = np.unique(result, return_index=True)
-    return result[np.sort(idx)]
+    result = result[np.sort(idx)]
+    
+    # Return scalar if input was scalar
+    return result[0] if is_scalar else result
     # return np.round(t/dt)*dt
 
 def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimals=2, exp_part=True, add_tend=True):
@@ -258,6 +279,14 @@ def output_ops_dm(dim=[2,2], readable=False):
     return matrix_element_operators(basis_states, dim, readable=readable)
 
 def op_to_matrix(op):
+    op_parts = op.split("+")
+    op_matrix = _op_to_matrix(op_parts[0].strip())
+    if len(op_parts) > 1:
+        for part in op_parts[1:]:
+            op_matrix += _op_to_matrix(part.strip())
+    return op_matrix
+
+def _op_to_matrix(op):
     """
     Description:
         Converts a string representation of an operator (e.g., |1><0|_2) into a matrix.
@@ -342,10 +371,6 @@ def read_calibration_file(calibration_file):
     gamma_e = 1/lifetime_exciton
     gamma_b = 1/(lifetime_biexciton*2)
     gamma_d = 0 #1/lifetime_dark
-
-    return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
-
-
 
     return exciton_x_energy, exciton_y_energy, dark_x_energy, dark_y_energy, binding_energy, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz
 
@@ -537,6 +562,7 @@ def extract_dms(dm, times, tau_c, t_MTOs):
     # dm_2 = dm[i_tmto:i_tmto+len_tauc]
     # extract the time-local dynamical map
     tl_map = dm[i_timelocal]
+    # print(np.allclose(tl_map, dm_1[-1]))
     # with np.printoptions(precision=4, suppress=True):
     #     print(dm[i_tmtos[0]-2])
     #     print(dm[i_tmtos[0]-1])

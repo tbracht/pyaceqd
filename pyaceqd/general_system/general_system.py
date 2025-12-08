@@ -347,8 +347,10 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
         except FileNotFoundError:
             pass
         if not prepare_only:
-            os.remove(tmp_file)
-            pass
+            try:
+                os.remove(tmp_file)
+            except FileNotFoundError:
+                pass
         if _remove_pulse_file:
             os.remove(pulse_file_x)
             if pulse_file_y is not None:
