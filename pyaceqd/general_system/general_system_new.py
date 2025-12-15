@@ -1,19 +1,33 @@
 import numpy as np
 import os
 import subprocess
-from pyaceqd.tools import export_csv
+from pyaceqd.tools import export_csv, basis_states
 import pyaceqd.constants as constants
 import time
 import itertools
 import sys
 import multiprocessing as mp
-# from contextlib import redirect_stdout
-# import io
+from tabulate import tabulate
+from pyaceqd.helpers.color_tools import select_equally_spaced_colors, hex_to_rgba
+from pyaceqd.helpers.order_eigenstates import order_eigenstates
 
 hbar = constants.hbar  # meV*ps
 temp_dir = constants.temp_dir
 sys.path.append(constants.pybind_path)  # path to pybinds for ACE
 from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap
+
+def compose_dm(outputs, dim=2):
+    """
+    composes a density matrix from the output of ACE, with every output-array being the time dynamics for the corresponding output operator
+    """
+    # dim is the dimension of the system
+    t, outputs = outputs  # unpack
+    # print("Outputs shape:", outputs.shape)
+    rho = np.zeros((len(outputs[0]),dim,dim),dtype=np.complex128)
+    for i in range(len(outputs[0])):
+        rho[i] = np.reshape(outputs[:,i], (dim,dim))
+    t = np.real(outputs[0])
+    return t, rho
 
 def generate_rf(t, pulses, firstonly=False):
     """
@@ -53,8 +67,8 @@ def _get_pt_name(system_prefix, ae, temperature, threshold, dt, J_file):
         pt_file = "{}_{}nm_{}k_th{}_dt{}.pt".format(system_prefix,ae,temperature,threshold,dt)
     return pt_file
 
-def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename, boson_e_max=7, verbose=False, J_file=None, J_to_file=False):
-    params = []
+def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename, boson_e_max=7, verbose=False, J_file=None, J_to_file=False, plist=[]):
+    params = plist
     params += ["dt {}".format(dt)]
     params += ["te {}".format(20)]
     params += ["threshold 1e-{}".format(threshold)]
@@ -80,7 +94,6 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
         print("Calculating PT file with parameters:")
         for line in params:
             print(line)
-
     ctx = mp.get_context('fork')
     proc = ctx.Process(target=_gen_pt_worker, args=(params,))
     proc.start()
@@ -238,7 +251,8 @@ def system_ace(t_start, t_end, *pulses, dt=0.01, phonons=False, ae=3.0, temperat
 
 class GeneralSystemACE:
     def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7, initial=None,
-                 system_op=["0*|1><1|_2"], boson_op=None, lindblad_ops=None,J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None):
+                 system_op=["0*|1><1|_2"], boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
+                 colors=None):
         """
         ACE: separate calculation for the process tensor, which can be used to simulate long time scales with interaction to the environment.
         """
@@ -250,6 +264,11 @@ class GeneralSystemACE:
             self.plist_base += ["add_Hamiltonian {{ {} }}".format(_op)]
         self.dt = dt
         self.plist_base += ["dt {}".format(dt)]
+
+        if lindblad_ops is not None and lindblad:
+            for _op in lindblad_ops:
+                # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
+                self.plist_base += ["add_Lindblad {} {{ {} }}".format(_op[1],_op[0])]
 
         self.phonons = phonons
         if self.phonons:
@@ -273,7 +292,7 @@ class GeneralSystemACE:
             # try to detect pt_file, else calculate it
             if not os.path.exists(self.pt_file+"_initial") or J_to_file is not None:
                 print("{} not found. Calculating...".format(self.pt_file))
-                _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, self.pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file)
+                _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, self.pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file, plist=self.plist_base.copy())
             # add to plist
             self.plist_base += ["add_PT {}".format(self.pt_file)]
         
@@ -284,16 +303,24 @@ class GeneralSystemACE:
         param_base = Parameters(self.plist_base)
         base_fprop = FreePropagator(param_base)
         self.dim = base_fprop.get_dim()
+        self.dim_prod = dim_prod  # can optionally be provided if system is product of smaller subsystems: for ex., if two TLS, dim_prod=[2,2], dim = np.prod(dim_prod)=4
+        if self.dim_prod is None:
+            self.dim_prod = [self.dim]
         if self.verbose:
             print("System dimension: {}".format(self.dim))
         # shared Process Tensor object
-        self.PT = ProcessTensors(param_base)
-        self.lindblad_ops = lindblad_ops
+        if self.phonons:
+            self.PT = ProcessTensors(param_base)
+        else:
+            self.PT = ProcessTensors()  # empty PT
+        # self.PT = ProcessTensors(param_base)
+        # self.lindblad_ops = lindblad_ops
         self.rf_op = rf_op
         self.inital = initial
+        self.colors = colors  # optional colors for plotting
 
-    def run(self, t_start, t_end, *pulses, lindblad=True, multitime_op=None, initial=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
-            print_H=False, rf_op=None, rf_array=None):
+    def run(self, t_start, t_end, *pulses, multitime_op=None, initial=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
+            return_H=False, rf=False, rf_array=None):
         """
         runs a simulation with the given parameters and the base parameters defined in the class init.
         rho0: initial density matrix as numpy array, overrides 'initial' parameter.
@@ -302,11 +329,6 @@ class GeneralSystemACE:
         run_plist += ["ta {}".format(t_start)]
         run_plist += ["te {}".format(t_end)]
         run_plist += ["use_symmetric_Trotter true"]
-
-        if self.lindblad_ops is not None and lindblad:
-            for _op in self.lindblad_ops:
-                # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
-                run_plist += ["add_Lindblad {} {{ {} }}".format(_op[1],_op[0])]
 
         # initial state
         if initial is None:
@@ -323,8 +345,18 @@ class GeneralSystemACE:
                 run_plist += ["apply_Operator_{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
 
         # output
-        for _op in output_ops:
-            run_plist += ["add_Output {{ {} }}".format(_op)]
+        # check if output_ops are strings, empty or arrays
+        outputs_are_strings = False
+        if len(output_ops) == 0:
+            # if empty, returns full density matrix if OutputPrinter is called with param only
+            outputs_are_strings = True
+        else:
+            if isinstance(output_ops[0], str):
+                if self.verbose:
+                    print("Output operators are strings")
+                outputs_are_strings = True
+                for _op in output_ops:
+                    run_plist += ["add_Output {{ {} }}".format(_op)]
 
         # for testing: just print the plist
         if prepare_only:
@@ -347,13 +379,16 @@ class GeneralSystemACE:
         # this is done using the add_Pulse function of ACE, as this can time-dependently change the system hamiltonian
         # note that it automatically adds the hermitian conjugate of rf_op as well, so a factor of 1/2 is needed
         # the rf_operator should usually be diagonal in the system hamiltonian basis, so it should not be complex valued.
-        if rf_op is not None:
-            if rf_array is None:
-                # Caution: This also re-generates the pulses, removing the temporal
-                # oscillation of (at least) the first pulse.
-                _, rf_array, new_pulses = generate_rf(t=t, pulses=pulses)
-                pulses = new_pulses
-            fprop.add_Pulse((t,-0.5*hbar*rf_array), rf_op)
+        if rf:
+            if len(pulses) == 0:
+                pass
+            else:
+                if rf_array is None:
+                    # Caution: This also re-generates the pulses, removing the temporal
+                    # oscillation of (at least) the first pulse.
+                    _, rf_array, new_pulses = generate_rf(t=t, pulses=pulses)
+                    pulses = new_pulses
+                fprop.add_Pulse((t,-0.5*hbar*rf_array), self.rf_op)
 
         # after potential RF, add pulses
         for pulse in pulses:
@@ -363,29 +398,191 @@ class GeneralSystemACE:
             if pulse.polarization not in self.modes:
                 raise ValueError("Pulse polarization {} not in system modes {}".format(pulse.polarization, self.modes.keys()))
             # add pulse
-            fprop.add_Pulse((t, -0.5*hbar*np.pi*pulse.get_total(t)), self.modes[pulse.polarization])     
+            # TODO: add option for pre-calculated pulse array.
+            fprop.add_Pulse((t, -0.5*hbar*np.pi*pulse.get_total(t)), self.modes[pulse.polarization])  # time, complex pulse amplitude, operator    
 
         # option to return Hamiltonian
-        if print_H:
+        if return_H:
             H_total = np.empty((len(t), self.dim, self.dim), dtype=complex)
             for i, ti in enumerate(t):
                 H_total[i] = fprop.get_Htot(ti)
             return t, H_total       
         
         sim = Simulation(param)
+        PT = ProcessTensors(param)
         # calculate dynamical maps
         if calc_dynmap:
-            dynmap = DynamicalMap(fprop, self.PT, sim, tgrid)
+            dynmap = DynamicalMap(fprop, PT, sim, tgrid)
             _dm = np.array(dynmap.E)
             return [t], _dm
-             
-        outp = OutputPrinter(param)
+        
+        if not outputs_are_strings:
+            outp = OutputPrinter(output_ops)
+        else:
+            outp = OutputPrinter(param)  # empyt output_ops will return full density matrix
         outp.do_extract = True
-        # lets see if we can share the PT object
-        sim.run(fprop, self.PT, initial_state, tgrid, outp)
+        sim.run(fprop, PT, initial_state, tgrid, outp)
         result = outp.extract()
         #reshaped = np.vstack([result[0][np.newaxis, :].real, result[1].T])
         return result[0].real, result[1].T
     
+    def dressed_states(self, t_start, t_end, *pulses, lindblad=True, initial=None, rho0=None, rf=True, rf_array=None, firstonly=False, no_pulse=False, colors=None,
+                       visible_states=None, print_states_t=None, plot=True, t_lim=None, filename="dressed", e_lim=None, return_eigenvectors=False, fix_order=True):
+        """
+        calculates dressed states using the density matrix from run()
+        rho0: initial density matrix as numpy array, overrides 'initial' parameter.
+        rf: use rotating frame of laser pulses
+        firstonly: only use first pulse to calculate the dressed states, but use all pulses for the density matrix calculation.
+        no_pulse: do not use any pulse to calculate the dressed states, only the system hamiltonian (useful if system is not in its eigenstates, e.g. due to magnetic field)
+                  all pulses are still used for the density matrix calculation.
+        rf_array: use this rf_array instead of generating it from the pulses.
+        """
+        t, rho = compose_dm(self.run(t_start, t_end, *pulses, initial=initial, rho0=rho0, rf=rf, rf_array=rf_array), dim=self.dim)
+        if firstonly:
+            pulses = [pulses[0]]
+        if no_pulse:
+            pulses = []
+        t, H_total = self.run(t_start, t_end, *pulses, initial=initial, rho0=rho0, return_H=True, rf=rf, rf_array=rf_array)
+        if self.colors is None:
+            self.colors = select_equally_spaced_colors(n=self.dim)
 
-# a = GeneralSystemACE(dt=0.1, phonons=True, ae=5.0, temperature=4, verbose=True, system_prefix="test_system", system_op=["0*|1><1|_2"], boson_op="|1><1|_2", lindblad_ops=[( "|0><1|_2", 1/100 )])
+        dim_prod = self.dim_prod
+        # if dim_prod is None:
+        #     dim_prod = [self.dim]
+
+        if plot:
+            import matplotlib.pyplot as plt
+            plt.clf()
+            plt.ylim(-0.1,1.1)
+            labels = basis_states(dim_prod)
+            for i in range(self.dim):
+                plt.plot(t, rho[:,i,i].real, label=labels[i], color=self.colors[i])
+            if t_lim is not None:
+                plt.xlim(t_lim[0],t_lim[1])
+            plt.xlabel("t (ps)")
+            plt.ylabel("occupation")
+            plt.legend()
+            plt.savefig(filename + "_rho.png")
+            plt.clf()
+        
+        e_vectors = np.zeros((len(t),self.dim,self.dim),dtype=np.complex128)
+        e_values = np.zeros((len(t),self.dim))
+
+        for i in range(len(t)):
+            # diagonalize current Hamiltonian
+            e_values[i], e_vectors[i] = np.linalg.eigh(H_total[i])
+
+        # order eigenstates to prevent jumps between branches
+        if fix_order:            
+            e_values, e_vectors = order_eigenstates(e_values, e_vectors)
+
+        for i in range(len(t)):
+            e_vectors[i] = e_vectors[i].T  # so that e_vectors[i,j] is the j-th component of the i-th eigenvector
+
+        # first fix the phase of the eigenvectors
+        for i in range(len(t)):
+            # if first component of first EV is not real and smaller than 0:
+            # multiply all EVs with exp(-1j*angle)
+            angle=0
+            if (np.imag(e_vectors[i,0,0]) !=0 or e_vectors[i,0,0] < 0):
+                angle = np.angle(e_vectors[i,0,0])
+            e_vectors[i,:,:] = e_vectors[i,:,:]*np.exp(-1j*angle)        
+
+        if print_states_t is not None:
+            _t = print_states_t
+            i = np.argmin(np.abs(t-_t))
+            header = basis_states(dim_prod)
+            # add column in front for the dressed state index
+            header.insert(0,"t:{:.2f}".format(t[i]))
+            header.append("Energy")
+            table = []
+            for j in range(self.dim):
+                row = ["|Ψ"+str(j+1)+"⟩"]
+                row.extend(np.abs(e_vectors[i,j])**2)
+                row.extend([e_values[i,j]])
+                table.append(row)
+            print(tabulate(table,headers=header,floatfmt=".2f"))
+            # print(tabulate(np.abs(e_vectors[i])**2,headers=header,floatfmt=".2f"))
+
+        n_colors = np.empty([self.dim,e_values.shape[0]])  # for gnuplot
+        if len(self.colors) != self.dim:
+            print("Error: Number of colors does not match number of dressed states.")
+            return
+
+        s_colors = []  # stores color values
+        r_array = np.zeros(self.dim)
+        g_array = np.zeros(self.dim)
+        b_array = np.zeros(self.dim)
+        a_array = np.zeros(self.dim)
+        a_array_gp = np.zeros(self.dim)  # for gnuplot
+        for i in range(self.dim):
+            r_array[i] = hex_to_rgba(self.colors[i])[0]/255
+            g_array[i] = hex_to_rgba(self.colors[i])[1]/255
+            b_array[i] = hex_to_rgba(self.colors[i])[2]/255
+            if visible_states is None:
+                a_array[i] = hex_to_rgba(self.colors[i])[3]/255
+                a_array_gp[i] = 1-hex_to_rgba(self.colors[i])[3]/255
+
+        if visible_states is not None:
+            # check that no value will be OOB
+            if np.max(visible_states) > self.dim-1:
+                print("Error: Visible states out of bounds.")
+                return
+            a_array[visible_states] = 1
+            a_array_gp[visible_states] = 0
+
+        for i in range(self.dim):
+            colors = []
+            for j in range(e_values.shape[0]):
+                e = np.abs(e_vectors[j,i])**2
+                r = int(np.clip(np.dot(r_array,e),0,1)*255)
+                g = int(np.clip(np.dot(g_array,e),0,1)*255)
+                b = int(np.clip(np.dot(b_array,e),0,1)*255)
+                a = int(np.clip(np.dot(a_array,e),0,1)*255)
+                agp = int(np.clip(np.dot(a_array_gp,e),0,1)*255)
+                n_colors[i,j] = 65536*r + 256*g + b + agp*16777216  # can be used in gnuplot with 'lc rgb variable'
+                colors.append("#{:02x}{:02x}{:02x}{:02x}".format(r,g,b,a))
+            s_colors.append(colors)
+            if plot:
+                plt.scatter(t,e_values[:,i],c=colors)
+        if plot:
+            if t_lim is not None:
+                plt.xlim(t_lim[0],t_lim[1])
+            if e_lim is not None:
+                plt.ylim(e_lim[0],e_lim[1])
+            for i in range(self.dim):
+                plt.plot(t,e_values[:,i],label="ds{}".format(i+1))
+            plt.legend()
+            plt.xlabel("t (ps)")
+            plt.ylabel("E (meV)")
+            plt.savefig(filename + "_ds.png")
+            plt.clf()
+
+        # dressed state occupations
+        # we use the following formula for the occupation of a dressed state |psi>:
+        # <|psi><psi|> = sum_ij a_i * a_j^* * <|phi_i><phi_j|>
+        # where |phi_i> are the states of the system and a_i are the components of |psi> in the basis of |phi_i>
+        # <|phi_i><phi_j|> is the density matrix rho
+        ds_occ = np.zeros([len(t),self.dim])
+        for i in range(len(t)):
+            for j in range(self.dim):
+                ds_ij = e_vectors[i,j][:,None]*e_vectors[i,j].conj()  # ai * aj^*
+                ds_occ[i,j] = np.sum(ds_ij*rho[i]).real  # sum_ij ai * aj^* * <|phi_i><phi_j|>
+        if plot:
+            plt.clf()
+            plt.ylim(-0.1,1.1)
+            if t_lim is not None:
+                plt.xlim(t_lim[0],t_lim[1])
+            for i in range(self.dim):
+                plt.scatter(t,ds_occ[:,i],c=s_colors[i])
+            for i in range(self.dim):
+                plt.plot(t,ds_occ[:,i],label="ds{}".format(i+1))
+            plt.xlabel("t (ps)")
+            plt.ylabel("occupation (dressed state)")
+            plt.legend()
+            plt.savefig(filename + "_ds_occ.png")
+            plt.clf()
+        populations = np.diagonal(rho, axis1=1, axis2=2)
+        if return_eigenvectors:
+            return t, populations, e_values, ds_occ, s_colors, n_colors, e_vectors, rho
+        return t, populations, e_values, ds_occ, s_colors, n_colors

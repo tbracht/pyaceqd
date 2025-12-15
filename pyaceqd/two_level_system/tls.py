@@ -17,7 +17,7 @@ hbar = constants.hbar  # meV*ps
 temp_dir = constants.temp_dir
 
 class TlS_(GeneralSystemACE):
-    def __init__(self, dt=0.1, gamma_e=1/100, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, J_to_file=None, J_file=None, factor_ah=None, pt_dir=""):
+    def __init__(self, dt=0.1, gamma_e=1/100, lindblad=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", initial="|0><0|_2"):
         system_prefix = "tls" 
         threshold = "8"  # threshold for PT generation
         boson_e_max = 7  # maximum boson energy in meV
@@ -26,10 +26,11 @@ class TlS_(GeneralSystemACE):
         lindblad_ops = [["|0><1|_2", gamma_e]]  # decay of excited state to ground state
         modes = {"x": ketbra(1,0,2)}  # operator |1><0|_2 couples to x-polarized light
         rf_op = ketbra(1,1,2)  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
-        initial = "|0><0|_2"  # initial state of the system
+        colors = ["#0000FF", "#FF0000"]
         super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
-                          threshold=threshold, boson_e_max=boson_e_max, system_op=system_op, modes=modes, rf_op=rf_op,
-                          boson_op=boson_op, lindblad_ops=lindblad_ops, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir)
+                          threshold=threshold, boson_e_max=boson_e_max, system_op=system_op, modes=modes, rf_op=rf_op, initial=initial,
+                          boson_op=boson_op, lindblad_ops=lindblad_ops, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir,
+                          dim_prod=[2], colors=colors, lindblad=lindblad)
         
 
 

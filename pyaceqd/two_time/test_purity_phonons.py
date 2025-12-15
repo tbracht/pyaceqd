@@ -1,5 +1,5 @@
 from pyaceqd.pulses import ChirpedPulse
-from pyaceqd.two_level_system.tls import tls
+from pyaceqd.two_level_system.tls import tls, tls_new
 from pyaceqd.two_time.purity import Indistinguishability
 from pyaceqd.tools import op_to_matrix
 import numpy as np
@@ -7,12 +7,12 @@ import matplotlib.pyplot as plt
 
 tau = 5
 t0_n = 4.5
-p1 = ChirpedPulse(tau_0=tau, e_start=0, alpha=0, t0=t0_n*tau, e0=9, polar_x=1)
-options = {"verbose": False, "gamma_e": 1/100, "lindblad": True, "phonons": True, "use_infinite": True, "ae": 5, "temperature": 4}
+p1 = ChirpedPulse(tau_0=tau, e_start=0, alpha=0, t0=t0_n*tau, e0=1, polar_x=1, polarization="x")
+options = {"verbose": False, "gamma_e": 1/100, "lindblad": True, "phonons": True, "ae": 5, "temperature": 4, "prepare_only": False}
 
 sigma_x = op_to_matrix("|0><1|_2")
 sigma_xdag = op_to_matrix("|1><0|_2")
-a = Indistinguishability(tls, "|0><1|_2", "|1><0|_2", p1, dt=0.1, dt_small=0.1, tb=2000, simple_exp=False, gaussian_t=2*t0_n*tau, verbose=False, workers=23, t_simul=None, options=options, dm=True,
+a = Indistinguishability(tls_new, "|0><1|_2", "|1><0|_2", p1, dt=0.1, dt_small=0.1, tb=2000, simple_exp=False, gaussian_t=2*t0_n*tau, verbose=True, workers=23, t_simul=None, options=options, dm=True,
                          sigma_x_mat=sigma_x, sigma_xdag_mat=sigma_xdag, t_mem=10)
 
 a.factor_tau = 4
@@ -23,20 +23,29 @@ plt.xlabel("Time (a.u.)")
 plt.ylabel("Population of |1>")
 plt.legend()
 plt.savefig("x_train_tl.png")
-
-
+print("calculated time dynamics tl phonons")
 
 # tau2, t2, G12 = a.G1_tl_phonons()
 a.factor_tau = 2
 # print(a.calc_indistinguishability())
 # plt.clf()
+print("calculating G2 tl phonons")
 t2,g2_tl = a.G2_tl_phonons()
+print("calculated G2 tl phonons")
 plt.clf()
 plt.plot(t2,np.abs(g2_tl), label="G2_tl_new")
 plt.xlabel("tau")
 plt.ylabel("G2")
 plt.legend()
 plt.savefig("g2.png")
+
+tau2, G12 = a.G1_tl_phonons()
+plt.clf()
+plt.plot(tau2,np.abs(G12), label="G1_tl_new")
+plt.xlabel("tau")
+plt.ylabel("G1")
+plt.legend()
+plt.savefig("g1.png")
 
 # tau2, G12 = a.G1_tl_phonons()
 # print("")

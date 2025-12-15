@@ -3,6 +3,8 @@ import numpy as np
 import os
 from pyaceqd.tools import export_csv, output_ops_dm, compose_dm, read_calibration_file
 from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.general_system_new import GeneralSystemACE
+from pyaceqd.helpers.ace_operators import ketbra
 from pyaceqd.general_system.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
 
@@ -24,6 +26,45 @@ def energies_linear(d0=0.25, d1=0.12, d2=0.05, delta_B=4, delta_E=0.0):
     E_F = delta_E - (d0 + d2)/2.0 
     E_B = 2.*delta_E - delta_B
     return E_X, E_Y, E_S, E_F, E_B
+
+class SixLevelLinearSystem(GeneralSystemACE):
+    def __init__(self, dt=0.1, gamma_e=1/100, gamma_b=None, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, lindblad=True,
+                 J_to_file=None, J_file=None, factor_ah=None, pt_dir="", initial="|0><0|_6", calibration_file=None, delta_b=4,
+                d0=0.25, d1=0.2, d2=0.05, bx=0, bz=0):
+        system_prefix = "sixls_linear" 
+        threshold = "8"  # threshold for PT generation
+        boson_e_max = 7  # maximum boson energy in meV
+        if calibration_file is not None:
+            E_X, E_Y, E_S, E_F, E_B, gamma_e, gamma_b, gamma_d, g_ex, g_hx, g_ez, g_hz = read_calibration_file(calibration_file)
+        else:
+            E_X, E_Y, E_S, E_F, E_B = energies_linear(delta_B=delta_b, d0=d0, d1=d1, d2=d2)
+            g_ex = -0.65  # in plane electron g factor
+            g_ez = -0.8  # out of plane electron g factor
+            g_hx = -0.35  # in plane hole g factor
+            g_hz = -2.2  # out of plane hole g factor
+        system_op = ["({})*|1><1|_6 + ({})*|2><2|_6 + ({})*|3><3|_6 + ({})*|4><4|_6 + ({})*|5><5|_6".format(E_X,E_Y,E_S,E_F,E_B)]
+        # bright-dark coupling depending on Bx
+        if bx != 0:
+            system_op.append("({})*(|1><3|_6 + |3><1|_6 )".format(-0.5*mu_b*bx*(g_ex+g_hx)))
+            system_op.append("({})*(|2><4|_6 + |4><2|_6 )".format(-0.5*mu_b*bx*(g_ex-g_hx)))
+        # bright-bright and dark-dark coupling depending on Bz
+        if bz != 0.0:
+            system_op.append("-i*({})*(|2><1|_6 - |1><2|_6 )".format(-0.5*mu_b*bz*(g_ez-3*g_hz)))
+            system_op.append("-i*({})*(|4><3|_6 - |3><4|_6 )".format(+0.5*mu_b*bz*(g_ez+3*g_hz)))
+        boson_op = "1*(|1><1|_6+|2><2|_6+|3><3|_6+|4><4|_6) + 2*|5><5|_6"  # operator that couples to phonons
+        if gamma_b is None:
+            gamma_b = gamma_e
+        lindblad_ops = [["|0><1|_6",gamma_e],["|0><2|_6",gamma_e],
+                        ["|1><5|_6",gamma_b],["|2><5|_6",gamma_b]]
+                        # ["|0><3|_6",gamma_d],["|0><4|_6",gamma_d]]
+        modes = {"x": ketbra(1,0,6)+ketbra(5,1,6), "y": ketbra(2,0,6)+ketbra(5,2,6)}  # operator |1><0|_6+|5><1|_6 couples to x-polarized light
+        rf_op = ketbra(1,1,6)+ketbra(2,2,6)+ketbra(3,3,6)+ketbra(4,4,6)+2*ketbra(5,5,6)  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
+        colors = ["#0000cf", "#45b0ee", "#ff0022", "#9966cc", "#009e00", "#ffde39"]
+        super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
+                          threshold=threshold, boson_e_max=boson_e_max, system_op=system_op, modes=modes, rf_op=rf_op, initial=initial,
+                          boson_op=boson_op, lindblad_ops=lindblad_ops, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir,
+                          dim_prod=[6], colors=colors, lindblad=lindblad)
+
 
 def sixls_linear(t_start, t_end, *pulses, dt=0.5, delta_b=4, gamma_e=1/100, gamma_b=None, gamma_d=0, bx=0, bz=0, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_6","|1><1|_6","|2><2|_6","|3><3|_6","|4><4|_6","|5><5|_6"], initial="|0><0|_6", t_mem=20.48, output_dm=False, dressedstates=False, rf=False, rf_file=None,

@@ -285,7 +285,7 @@ class PolarizatzionEntanglement():
         # _propagators[-1] = np.eye(dim*dim)
 
         xx_n1n2 = np.zeros((len(time_small), dim*dim, dim*dim), dtype=complex)
-        for i in tqdm.trange(len(time_small)):
+        for i in range(len(time_small)):
             x_n2 = op_4 @ op_1 @ rho_t[i]
             # x_n2 = op4_matrix @ rho_t[i].reshape(dim,dim) @ op1_matrix
             # x_n2 = x_n2.reshape(dim*dim)
@@ -448,7 +448,7 @@ class PolarizatzionEntanglement():
         # _propagators[-1] = np.eye(dim*dim)
 
         xx_n1n2 = np.zeros((len(time_small), dim*dim, dim*dim), dtype=complex)
-        for i in tqdm.trange(len(time_small)):
+        for i in range(len(time_small)):
             x_n2 = op_4 @ op_1 @ rho_t[i]
             # x_n2 = op4_matrix @ rho_t[i].reshape(dim,dim) @ op1_matrix
             # x_n2 = x_n2.reshape(dim*dim)
