@@ -5,7 +5,7 @@ import pyaceqd.constants as constants
 hbar = constants.hbar  # meV*ps
 
 class Pulse:
-    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, polar_x=1, polars=None, polarization=None, interaction_op=None):
+    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, polar_x=1, polars=None, polarization=None, interaction_op=None, repeat_tb=None):
         self.tau = tau  # in ps
         self.e_start = e_start  # in meV
         # self.w_start = e_start / hbar  # in 1 / ps
@@ -19,6 +19,7 @@ class Pulse:
         self.interaction_op = interaction_op
         self.polar_x = polar_x
         self.polar_y = np.sqrt(1-polar_x**2)
+        self.repeat_tb = repeat_tb  # if not None, the pulse is repeated every repeat_tb ps
         if polars is not None:
             norm = np.sqrt(np.abs(polars[0])**2 + np.abs(polars[1])**2)
             self.polar_x = polars[0]/norm
@@ -82,16 +83,37 @@ class Pulse:
         return energy_range
 
     def get_total(self, t):
+        if self.repeat_tb is not None:
+            t_mod = np.mod(t, self.repeat_tb)
+            return self.get_envelope(t_mod) * np.exp(-1j * self.get_full_phase(t_mod))
         return self.get_envelope(t) * np.exp(-1j * self.get_full_phase(t))
+    
+    def get_total_dict(self, t):
+        return {
+            "time": t,
+            "polarization": self.polarization,
+            "total": self.get_total(t),
+        }
 
     def copy(self):
-        return Pulse(self.tau, self.e_start, self.w_gain, self.t0, self.e0, self.phase, self.polar_x, None, self.polarization, self.interaction_op)
+        return Pulse(self.tau, self.e_start, self.w_gain, self.t0, self.e0, self.phase, self.polar_x, None, self.polarization, self.interaction_op, self.repeat_tb)
+
+    def _base_kwargs(self):
+        return dict(
+            t0=self.t0,
+            e0=self.e0,
+            phase=self.phase,
+            polar_x=self.polar_x,
+            polarization=self.polarization,
+            interaction_op=self.interaction_op,
+            repeat_tb=self.repeat_tb,
+        )
 
 class AsymmetricPulse(Pulse):
-    def __init__(self, tau1, tau2, e_start, t0=0, e0=1, phase=0, polar_x=1, polars=None):
+    def __init__(self, tau1, tau2, e_start, t0=0, e0=1, phase=0, polar_x=1, polars=None, **pulse_kwargs):
         self.tau1 = tau1
         self.tau2 = tau2
-        super().__init__(tau1, e_start, w_gain=0, t0=t0, e0=e0, phase=phase, polar_x=polar_x, polars=polars)
+        super().__init__(tau1, e_start, w_gain=0, t0=t0, e0=e0, phase=phase, polar_x=polar_x, polars=polars, **pulse_kwargs)
 
     def get_envelope(self, t):
         # gaussian with tau1 up to t0 and tau2 after t0
@@ -102,14 +124,14 @@ class AsymmetricPulse(Pulse):
         return np.concatenate((e_smaller, e_larger))
     
     def copy(self):
-        return AsymmetricPulse(self.tau1, self.tau2, self.e_start, self.t0, self.e0, self.phase, self.polar_x, None)
+        return AsymmetricPulse(self.tau1, self.tau2, self.e_start, polars=None, **self._base_kwargs())
 
 class ChirpedPulse(Pulse):
-    def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None):
+    def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None, **pulse_kwargs):
         self.tau_0 = tau_0
         self.alpha = alpha
         super().__init__(tau=np.sqrt(alpha**2 / tau_0**2 + tau_0**2), e_start=e_start, w_gain=alpha/(alpha**2 + tau_0**4), t0=t0, e0=e0, polar_x=polar_x, phase=phase, polars=polars, polarization=polarization,
-                         interaction_op=interaction_op)
+                         interaction_op=interaction_op, **pulse_kwargs)
     
     def get_parameters(self):
         """
@@ -130,12 +152,12 @@ class ChirpedPulse(Pulse):
         return np.sqrt(self.tau / self.tau_0)
     
     def copy(self):
-        return ChirpedPulse(self.tau_0, self.e_start, self.alpha, self.t0, self.e0, self.polar_x, self.phase, None, self.polarization, self.interaction_op)
+        return ChirpedPulse(self.tau_0, self.e_start, self.alpha, polars=None, **self._base_kwargs())
 
 class QuenchedChirpedPulse(ChirpedPulse):
-    def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, t_quench=0, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None):
+    def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, t_quench=0, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None, **pulse_kwargs):
         self.t_quench = t_quench
-        super().__init__(tau_0, e_start, alpha, t0, e0, polar_x, phase, polars, polarization, interaction_op)
+        super().__init__(tau_0, e_start, alpha, t0, e0, polar_x, phase, polars, polarization, interaction_op, **pulse_kwargs)
     
     def get_envelope(self, t):
         env = super().get_envelope(t)
@@ -149,7 +171,7 @@ class QuenchedChirpedPulse(ChirpedPulse):
             return super().get_integral(self.t_quench)
     
     def copy(self):
-        return QuenchedChirpedPulse(self.tau_0, self.e_start, self.alpha, self.t0, self.e0, self.t_quench, self.polar_x, self.phase, None, self.polarization, self.interaction_op)
+        return QuenchedChirpedPulse(self.tau_0, self.e_start, self.alpha, t_quench=self.t_quench, polars=None, **self._base_kwargs())
 
 class PulseTrain:
     """
@@ -184,14 +206,14 @@ class CWLaser(Pulse):
     cw-laser, i.e., it is just on the whole time without any switch-on process
     """
 
-    def __init__(self, e0, e_start=0, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None):
-        super().__init__(tau=5, e_start=e_start, e0=e0, polar_x=polar_x, polars=polars, phase=phase, polarization=polarization, interaction_op=interaction_op)
+    def __init__(self, e0, e_start=0, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None, **pulse_kwargs):
+        super().__init__(tau=5, e_start=e_start, e0=e0, polar_x=polar_x, polars=polars, phase=phase, polarization=polarization, interaction_op=interaction_op, **pulse_kwargs)
 
     def get_envelope(self, t):
         return self.e0
     
     def copy(self):
-        return CWLaser(self.e0, self.e_start, self.polar_x, self.phase, None, self.polarization, self.interaction_op)
+        return CWLaser(self.e0, self.e_start, polars=None, **self._base_kwargs())
 
 class SmoothRectangle(Pulse):
     """
@@ -199,10 +221,10 @@ class SmoothRectangle(Pulse):
 
     """
 
-    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, alpha_onoff=0.1, polar_x=1, polars=None, polarization=None, interaction_op=None):
+    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, alpha_onoff=0.1, polar_x=1, polars=None, polarization=None, interaction_op=None, **pulse_kwargs):
         self.alpha_onoff = alpha_onoff
         self.alpha = 1/alpha_onoff  # switch on/off time
-        super().__init__(tau, e_start, w_gain=w_gain, t0=t0, e0=e0, phase=phase, polar_x=polar_x, polars=polars, polarization=polarization, interaction_op=interaction_op)
+        super().__init__(tau, e_start, w_gain=w_gain, t0=t0, e0=e0, phase=phase, polar_x=polar_x, polars=polars, polarization=polarization, interaction_op=interaction_op, **pulse_kwargs)
 
     def get_envelope_f(self):
         return lambda t: self.e0/( (1+np.exp(-self.alpha*(t+self.tau/2 - self.t0))) * (1+np.exp(-self.alpha*(-t+self.tau/2 + self.t0))) )
@@ -211,5 +233,5 @@ class SmoothRectangle(Pulse):
         return self.e0/( (1+np.exp(-self.alpha*(t+self.tau/2 - self.t0))) * (1+np.exp(-self.alpha*(-t+self.tau/2 + self.t0))) )
     
     def copy(self):
-        return SmoothRectangle(self.tau, self.e_start, self.w_gain, self.t0, self.e0, self.phase, self.alpha_onoff, self.polar_x, None, self.polarization, self.interaction_op)
+        return SmoothRectangle(self.tau, self.e_start, self.w_gain, alpha_onoff=self.alpha_onoff, polars=None, **self._base_kwargs())
     
