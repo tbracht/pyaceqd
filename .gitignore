@@ -130,3 +130,20 @@ dmypy.json
 
 # ACE process tensors
 *.pt
+*.pt_initial
+*.pt_repeated
+*.pt_initial_0
+*.pt_repeated_0
+
+# ACE files
+*.param
+*.ds
+*.out
+*.dat
+
+# figures
+*.png
+
+# numpy arrays
+*.npy
+*.npz
