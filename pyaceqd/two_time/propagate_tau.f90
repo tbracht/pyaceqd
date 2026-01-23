@@ -37,6 +37,24 @@ contains
         character(len=20) :: str
         write(str, '(I0)') i
     end function itoa
+    
+    function get_weights(n_t, time_sparse_round) result(weights)
+        integer, intent(in) :: n_t
+        real(8), intent(in) :: time_sparse_round(n_t)
+        real(8) :: weights(n_t)
+        integer :: i
+
+        if (n_t >= 2) then
+            weights(1) = 0.5d0*(time_sparse_round(2) - time_sparse_round(1))
+            do i = 2, n_t-1
+                weights(i) = 0.5d0*(time_sparse_round(i+1) - time_sparse_round(i-1))
+            end do
+            weights(n_t) = 0.5d0*(time_sparse_round(n_t) - time_sparse_round(n_t-1))
+        else
+            weights(1) = 0.0d0
+        end if
+
+    end function get_weights
 end module utils
 
 
@@ -186,8 +204,8 @@ subroutine calc_onetime_parallel(dm_tl, rho_init, n_tau, n_t, n_tfull, dim, opA,
     
 end subroutine calc_onetime_parallel
 
-subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n_map, n_t, n_tfull, dim,&
-     opA, opB, opC, time, time_sparse, result)
+subroutine calc_twotime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n_map, n_t, n_tfull, dim,&
+     opA, opB, opC, time, time_sparse, exponent, result)
     use utils
     implicit none
     ! n_tb: number of time points in one timebin
@@ -200,8 +218,8 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
     complex(8), intent(in) :: dm_block(dim*dim, dim*dim, n_map), dm_s(dim*dim, dim*dim)
     complex(8), intent(in) :: rho_init(dim*dim)
     complex(8), intent(in) :: opA(dim,dim), opB(dim,dim), opC(dim,dim)
-    real(8), intent(in) :: time(n_tfull), time_sparse(n_t)
-    complex(8), intent(out) :: result(n_t, n_tb*nx_tau+1)
+    real(8), intent(in) :: time(n_tfull), time_sparse(n_t), exponent
+    real(8), intent(out) :: result(n_tb*nx_tau+1)
 
     ! Locals
     integer :: j, i, k, l
@@ -212,7 +230,10 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
 
     complex(8) :: rho_buffer(dim*dim, n_t)
     integer :: j_array(n_t)
+    real(8) :: weights(n_t)
 
+    weights = get_weights(n_t, time_sparse_round)
+    result = 0.0d0
 
     rho_vec = rho_init
 
@@ -227,7 +248,7 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
     tmp = matmul(opC, rho_mtx)
     tmp = matmul(opB, tmp)
     tmp = matmul(opA, tmp)
-    result(1,1) = sum([(tmp(l,l), l=1,dim)])
+    result(1) = weights(1) * abs(sum([(tmp(l,l), l=1,dim)])) ** exponent
     j = 1
     do i=1, n_t
         ! Step 2: propagate rho_init up to time(j)
@@ -250,7 +271,7 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
         tmp = matmul(opC, rho_mtx)
         tmp = matmul(opB, tmp)
         tmp = matmul(opA, tmp)
-        result(i,1) = sum([(tmp(l,l), l=1,dim)])
+        result(1) = result(1) + weights(i) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
         ! write(*,*) "tau = 0, time = ", time_sparse_round(i), " result(1) = ", rho_vec(4)
         ! Step 4: apply opC and opA to rho_t and vectorize again
         tmp = matmul(opC, rho_mtx)
@@ -279,7 +300,7 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
             !    rho_res, 1, (0.0d0,0.0d0), rho_temp, 1)
                 tmp = reshape(rho_temp, [dim, dim])
                 tmp = matmul(opB, tmp)  ! opB is applied and the result is stored
-                result(i,k) = sum([(tmp(l,l), l=1,dim)])
+                result(k) = result(k) + weights(i) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
                 rho_res = rho_temp
                 j = j + 1
                 if (j == n_tb + 1) then
@@ -292,7 +313,7 @@ subroutine calc_onetime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
     !$omp end parallel do
     !write(*,*) char(13)//'Calculation finished.'
     
-end subroutine calc_onetime_parallel_block
+end subroutine calc_twotime_parallel_block
 
 subroutine calc_single_i(t_axis, t_axis_complete, rho0, dm_sep1, dm_s, dm_tauc2, dim, n_tb,&
     n_map, n_tau, n_t, n_tfull, opA, opB, opC, result, result2)
@@ -371,7 +392,7 @@ subroutine calc_single_i(t_axis, t_axis_complete, rho0, dm_sep1, dm_s, dm_tauc2,
 end subroutine calc_single_i
 
 subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init, n_tb, nx_tau, n_map, n_t, &
-     n_tfull, n_tauc, dim, opA, opB, opC, time, time_sparse, result)
+     n_tfull, n_tauc, dim, opA, opB, opC, time, time_sparse, exponent, result)
     use utils
     implicit none
     ! n_tb: number of time points in one timebin
@@ -385,15 +406,17 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
     complex(8), intent(in) :: dm_taucs2(dim*dim, dim*dim, n_tauc, n_map) !dm_taucs2(dim*dim, dim*dim, n_tauc, n_map)
     complex(8), intent(in) :: rho_init(dim*dim)
     complex(8), intent(in) :: opA(dim,dim), opB(dim,dim), opC(dim,dim)
-    real(8), intent(in) :: time(n_tfull), time_sparse(n_t)
-    complex(8), intent(out) :: result(n_t, n_tb*nx_tau+1)
+    real(8), intent(in) :: time(n_tfull), time_sparse(n_t), exponent
+    real(8), intent(out) :: result(n_tb*nx_tau+1)
     
+
     ! Locals
     integer :: j, i, k, l
     complex(8) :: rho_vec(dim*dim), rho_res(dim*dim)
     complex(8) :: rho_mtx(dim, dim), tmp(dim, dim)
     ! complex(8) :: rho_temp(dim*dim)
     real(8) :: time_round(n_tfull), time_sparse_round(n_t)
+    real(8) :: weights(n_t)
 
     complex(8) :: rho_buffer(dim*dim, n_t)
     integer :: j_array(n_t), j_start
@@ -403,12 +426,15 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
     !write(*,*) "n_tauc = ", n_tauc, " n_tb = ", n_tb, " nx_tau = ", nx_tau, " n_map = ", n_map
 
     rho_vec = rho_init
+    result = 0.0d0
 
     ! use dm_block first, then dm_s, 
 
     ! round time and time_sparse to nearest 1e-6
     time_round = time !nint(time * 1.0d6, kind=8) / 1.0d6
     time_sparse_round = time_sparse !nint(time_sparse * 1.0d6, kind=8) / 1.0d6
+
+    weights = get_weights(n_t, time_sparse_round)
 
     ! Step 1: compute result(1) = Tr(opA * opB * opC * rho_t)
     rho_mtx = reshape(rho_vec, [dim, dim])
@@ -420,7 +446,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
    ! write(*,*) "tmp = ", tmp
    ! write(*,*) "opB*opC", matmul(opB, opC)
     tmp = matmul(tmp, rho_mtx)
-    result(1,1) = sum([(tmp(l,l), l=1,dim)])
+    result(1) = weights(1) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
     j = 1
 
     do i=1, n_t
@@ -444,7 +470,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
         tmp = matmul(opC, rho_mtx)
         tmp = matmul(opB, tmp)
         tmp = matmul(opA, tmp)
-        result(i,1) = sum([(tmp(l,l), l=1,dim)])
+        result(1) = result(1) + weights(i) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
         ! write(*,*) "tau = 0, time = ", time_sparse_round(i), " result(1) = ", rho_vec(4)
         ! Step 4: apply opB to rho_t and vectorize again
         !tmp = matmul(opC, rho_mtx)
@@ -458,7 +484,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
     end do
 
     ! write(*,*) "Finished propagating rho_init up to time(j) using dm_sep1 and dm_s"
-    !$omp parallel do private(i, j, j_start, k, l, use_dm2, rho_res, tmp, rho_vec)
+    !$omp parallel do private(i, j, j_start, k, l, use_dm2, rho_res, tmp, rho_vec) reduction(+:result)
     ! use the n_tauc dm_tau2s
     do i = 1, n_tauc
         rho_vec = rho_buffer(:,i)
@@ -481,7 +507,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
             rho_vec = rho_res
             tmp = reshape(rho_vec, [dim, dim])
             tmp = matmul(transpose(opB), tmp)  ! opB.T is applied to rho, somewhere it seems the DM is transposed.
-            result(i,k) = sum([(tmp(l,l), l=1,dim)])
+            result(k) =  result(k) + weights(i) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
             j = j + 1
             if (j + j_start == n_tb + 1) then
                 j_start = 0 ! reset to the first block
@@ -492,7 +518,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
     end do
    !$omp end parallel do
     ! use dm_sep2 for the rest of the time points
-    !$omp parallel do private(i, j,j_start, k, l, use_dm2, rho_res, tmp, rho_vec)
+    !$omp parallel do private(i, j,j_start, k, l, use_dm2, rho_res, tmp, rho_vec) reduction(+:result)
     do i = n_tauc+1 , n_t
         rho_vec = rho_buffer(:,i)
         j = 1
@@ -520,7 +546,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
             rho_vec = rho_res
             tmp = reshape(rho_vec, [dim, dim])
             tmp = matmul(transpose(opB), tmp)
-            result(i,k) = sum([(tmp(l,l), l=1,dim)])
+            result(k) = result(k) + weights(i) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
             j = j + 1
             if (j + j_start == n_tb + 1) then
                 j_start = 0   ! we only need the delay in the first run
@@ -534,6 +560,7 @@ subroutine calc_twotime_phonon_block(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_init
 
 end subroutine calc_twotime_phonon_block
 
+! functions that dont span multiple timebins 
 subroutine calc_onetime_simple(dm_block, dm_s, rho_init, n_tb, n_map, n_t, n_tfull, dim,&
      opA, opB, opC, time, time_sparse, result)
     use utils

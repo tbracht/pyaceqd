@@ -15,6 +15,7 @@ class TimeBin():
         self.gaussian_t = gaussian_t  # use gaussian timestepping during pulse
         self.pulses = pulses
         self.workers = workers  # number of threads spawned by ThreadPoolExecutor
+        self.verbose = verbose
         try:
             self.temp_dir = options["temp_dir"]
         except KeyError:

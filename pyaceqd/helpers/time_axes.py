@@ -193,4 +193,86 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimal
     if add_tend:
         ts.append(np.array([tend]))
     return round_to_dt(np.concatenate(ts,axis=0), dt_small)
-    # return np.round(np.concatenate(ts,axis=0), decimals=decimals)  
+    # return np.round(np.concatenate(ts,axis=0), decimals=decimals) 
+
+class UnregularTimeAxis:
+    """
+    Can be used to generate time axes with different time steps in different regions.
+    t0: start time
+    tend: end time
+    t_switch: time where the time step changes from dt_small to dt_big
+    dt_small: time step for t < t_switch
+    dt_big: time step for t >= t_switch
+    pulses: list of Pulse objects, where the time step is dt_small around the pulses
+    factor_tau: factor to determine the region around the pulses with small time step
+    exponential_part: if True, adds an exponentially spaced part after t_switch
+    include_tend: if True, includes tend in the time axis
+    """
+    def __init__(self, t0, tend, t_switch=0, dt_small=0.1, dt_big=1.0, pulses=[], factor_tau=4, include_tend=True, round_dt=True):
+        self.dt_small = dt_small
+        self.dt_big = dt_big
+        self.t_switch = t_switch
+        self.pulses = pulses
+        self.factor_tau = factor_tau
+        self.include_tend = include_tend
+        self.t0 = t0
+        self.tend = tend
+        self.round_dt = round_dt
+
+    def _round_to_decimals(self, t):
+        """
+        rounds the time array t to the nearest multiple of dt
+        """
+        # Handle both scalar and array inputs
+        is_scalar = np.isscalar(t)
+        t_array = np.atleast_1d(t)
+    
+        result = np.round(t_array/self.dt_small)*self.dt_small
+        # remove duplicates that can occur due to rounding
+        _, idx = np.unique(result, return_index=True)
+        result = result[np.sort(idx)]
+    
+        # Return scalar if input was scalar
+        return result[0] if is_scalar else result
+
+    def time_axis_regular(self):
+        t_array = np.linspace(self.t0, self.tend, int((self.tend - self.t0)/self.dt_small) + 1, endpoint=self.include_tend)
+        if self.round_dt:
+            t_array = self._round_to_decimals(t_array)
+        return t_array
+    
+    def _get_exponential_axis(self):
+        t_exp = np.exp(np.arange(np.log(self.t_switch - self.t0), np.log(self.tend - self.t0), self.dt_small)) + self.t0
+        return round_to_dt(t_exp, self.dt_small)
+    
+    def time_axis_two_step(self, exponential_part=False):
+        """
+        regular time axis up to t_switch, then exponential spacing up to tend
+        always rounded to dt_small
+        """
+        t_array_small = np.arange(self.t0, self.t_switch, self.dt_small)
+        if exponential_part:
+            t_exp = self._get_exponential_axis()
+            t_array = np.concatenate((t_array_small, t_exp), axis=0)
+        else:
+            t_array_big = np.arange(self.t_switch, self.tend, self.dt_big)
+            t_array = np.concatenate((t_array_small, t_array_big), axis=0)
+        if self.include_tend:
+            t_array = np.append(t_array, self.tend)
+        return round_to_dt(t_array, self.dt_small)
+    
+    def time_axis_variable(self, exponential_part=False):
+        """
+        variable time axis up to t_switch, then exponential spacing up to tend
+        always rounded to dt_small
+        """
+        t_gaussian = get_gaussian_t(self.t0, self.t_switch, *self.pulses, dt_max=self.dt_big, dt_min=self.dt_small, interval_per_step=0.05)
+        if exponential_part:
+            t_exp = self._get_exponential_axis()
+            t_array = np.concatenate((t_gaussian, t_exp), axis=0)
+        else:
+            t_array_big = np.arange(self.t_switch, self.tend, self.dt_big)
+            t_array = np.concatenate((t_gaussian, t_array_big), axis=0)
+        if self.include_tend:
+            t_array = np.append(t_array, self.tend)
+        return round_to_dt(t_array, self.dt_small)
