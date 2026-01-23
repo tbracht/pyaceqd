@@ -60,6 +60,13 @@ class Purity(TimeBin):
             # usually we only use factor_t=1, so this is not a problem yet
             t_axis_complete = np.concatenate((t_axis_complete, self.t1 + i*self.tb))
         self.t_axis_complete = t_axis_complete
+        if self.verbose:
+            print("t1 axis for purity calculation: ", len(self.t1), " points")
+            print("complete t axis for purity calculation: ", len(self.t_axis_complete), " points")
+            n_tau = self.factor_tau*int(self.tb/self.dt)
+            print("tau axis for purity calculation: ", n_tau + 1, " points")
+            print("Total: ", len(self.t_axis_complete)*(n_tau + 1), " points in G2 matrix before integration.")
+            print("Memory usage estimate: {:.2f} MB (complex128 assumed).".format((n_tau + 1)*16/(1024*1024)))
         # compatibility with tls, which needs no polarization
         self.options["pulse_file_x"] = self.pulse_file_x
         self.options["pulse_file_y"] = self.pulse_file_y
@@ -311,8 +318,8 @@ class Indistinguishability(Purity):
         rho0 = np.zeros((self.dim,self.dim), dtype=complex)
         rho0[0,0] = 1  # initial state, rho0 = |0><0|
         rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
-        rho_t[0] = rho0.reshape(4)  # initial state, rho0 = |0><0|
-        rho_t[-1] = rho0.reshape(4)  # final state, rho0 = |0><0| just for convenience, will be overwritten
+        rho_t[0] = rho0.reshape(self.dim**2)  # initial state, rho0 = |0><0|
+        rho_t[-1] = rho0.reshape(self.dim**2)  # final state, rho0 = |0><0| just for convenience, will be overwritten
         for j in range(factors):
             # from 0 to len_tb-1, we have the pulses
             # do this in each time bin
@@ -365,8 +372,8 @@ class Indistinguishability(Purity):
         rho0 = np.zeros((self.dim,self.dim), dtype=complex)
         rho0[0,0] = 1  # initial state, rho0 = |0><0|
         rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
-        rho_t[0] = rho0.reshape(4)  # initial state, rho0 = |0><0|
-        rho_t[-1] = rho0.reshape(4)  # final state, rho0 = |0><0| just for convenience, will be overwritten
+        rho_t[0] = rho0.reshape(self.dim**2)  # initial state, rho0 = |0><0|
+        rho_t[-1] = rho0.reshape(self.dim**2)  # final state, rho0 = |0><0| just for convenience, will be overwritten
         for j in range(factors):
             # from 0 to len_tb-1, we have the pulses
             # do this in each time bin
@@ -609,9 +616,10 @@ class Indistinguishability(Purity):
 
         # print(opB_mat@opC_mat)
 
-        G1 = propagate_tau_module.calc_twotime_phonon_block(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
+        g1 = propagate_tau_module.calc_twotime_phonon_block(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
                                                             rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,
-                                                            dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
+                                                            dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete,
+                                                            exponent=2.0)
         # i = 40
         # results = np.zeros((len(tau)), dtype=complex)
         # j = 0
@@ -650,7 +658,7 @@ class Indistinguishability(Purity):
 
         
         #return tau, self.t_axis_complete, G1
-        g1 = np.trapezoid(np.abs(G1)**2, self.t_axis_complete, axis=0)
+        # g1 = np.trapezoid(np.abs(G1)**2, self.t_axis_complete, axis=0)
         return tau, g1
     
     def G2_tl_phonons(self):
@@ -716,10 +724,11 @@ class Indistinguishability(Purity):
         opB_mat = self.sigma_xdag_mat @ self.sigma_x_mat
         opC_mat = self.sigma_x_mat
         
-        G2 = propagate_tau_module.calc_twotime_phonon_block(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
+        g2 = propagate_tau_module.calc_twotime_phonon_block(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
                                                             rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,
-                                                            dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
-        g2 = np.trapezoid(np.abs(G2), self.t_axis_complete, axis=0)
+                                                            dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete,
+                                                            exponent=1.0)
+        # g2 = np.trapezoid(np.abs(G2), self.t_axis_complete, axis=0)
         return tau, g2
 
     def G2_tl(self):
@@ -748,10 +757,13 @@ class Indistinguishability(Purity):
         opB_mat = opA_mat @ opC_mat
         #start_time = time.time()
         # print(propagate_tau_module.__doc__)
-        G2 = propagate_tau_module.calc_onetime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
+        g2 = propagate_tau_module.calc_twotime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),
+                                                              n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,
+                                                              opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete,
+                                                              exponent=1.0)
         #end_time = time.time()
         #print(f"Time taken for tl_two_op_two_time with dm: {end_time - start_time:.2f} seconds")
-        g2 = np.trapezoid(np.abs(G2), self.t_axis_complete, axis=0)
+        # g2 = np.trapezoid(np.abs(G2), self.t_axis_complete, axis=0)
         return tau, g2
     
     def G1_tl(self):
@@ -777,10 +789,13 @@ class Indistinguishability(Purity):
         opC_mat = self.sigma_x_mat
         #start_time = time.time()
         # print(propagate_tau_module.__doc__)
-        G1 = propagate_tau_module.calc_onetime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete)
+        g1 = propagate_tau_module.calc_twotime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),
+                                                              n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,
+                                                              opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete,
+                                                              exponent=2.0)
         #end_time = time.time()
         #print(f"Time taken for tl_two_op_two_time with dm: {end_time - start_time:.2f} seconds")
-        g1 = np.trapezoid(np.abs(G1)**2, self.t_axis_complete, axis=0)
+        # g1 = np.trapezoid(np.abs(G1)**2, self.t_axis_complete, axis=0)
         return tau, g1
 
     def calc_indistinguishability(self):

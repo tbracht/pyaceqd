@@ -9,11 +9,28 @@ def ketbra(i,j, dim):
     op[i,j] = 1.0
     return op
 
-def cron(a,b):
+def kron(*ops):
     """
-    kronecker product of two arrays a and b
+    kronecker product of a list of operators, e.g. cron(A,B,C) = A (x) B (x) C
+    -----------
+    Args:
+        ops: list of operators as numpy arrays
+    Returns:
+        np.ndarray: Kronecker product of the input operators
+    -----------
+    Example:
+        A = np.array([[1, 0], [0, 1]])
+        B = np.array([[0, 1], [1, 0]])
+        C = np.array([[1, 0], [0, -1]])
+        result = cron(A, B, C)
+        print(result)
+    -----------
     """
-    return np.kron(a,b)
+    n = len(ops)
+    res = ops[0]
+    for k in range(1,n):
+        res = np.kron(res, ops[k])
+    return res
 
 def op_to_matrix(op):
     op_parts = op.split("+")

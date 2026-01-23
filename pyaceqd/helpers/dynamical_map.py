@@ -243,7 +243,8 @@ def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25,
     # relevant indices: 
     #print("len(times): ", len(times))
     #print("len(norms_tl): ", len(norms_tl))
-
+    if xlim is None:
+        xlim = times[-3]
     ix = np.where((times-times[0] > 0) & (times-times[0] < xlim))[0]
     #print(ix)
     plt.clf()

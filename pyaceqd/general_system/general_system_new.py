@@ -265,6 +265,7 @@ class GeneralSystemACE:
         self.dt = dt
         self.plist_base += ["dt {}".format(dt)]
 
+        self.lindblad = lindblad
         if lindblad_ops is not None and lindblad:
             for _op in lindblad_ops:
                 # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
@@ -308,19 +309,19 @@ class GeneralSystemACE:
             self.dim_prod = [self.dim]
         if self.verbose:
             print("System dimension: {}".format(self.dim))
-        # shared Process Tensor object
-        if self.phonons:
-            self.PT = ProcessTensors(param_base)
-        else:
-            self.PT = ProcessTensors()  # empty PT
+        # # shared Process Tensor object
+        # if self.phonons:
+        #     self.PT = ProcessTensors(param_base)
+        # else:
+        #     self.PT = ProcessTensors()  # empty PT
         # self.PT = ProcessTensors(param_base)
         # self.lindblad_ops = lindblad_ops
         self.rf_op = rf_op
-        self.inital = initial
+        self.initial = initial
         self.colors = colors  # optional colors for plotting
 
     def run(self, t_start, t_end, *pulses, multitime_op=None, initial=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
-            return_H=False, rf=False, rf_array=None):
+            return_H=False, rf=False, rf_array=None, get_M_t=None):
         """
         runs a simulation with the given parameters and the base parameters defined in the class init.
         rho0: initial density matrix as numpy array, overrides 'initial' parameter.
@@ -332,7 +333,7 @@ class GeneralSystemACE:
 
         # initial state
         if initial is None:
-            initial = self.inital
+            initial = self.initial
         if initial is not None:
             run_plist += ["initial {{ {} }}".format(initial)]
 
@@ -342,7 +343,8 @@ class GeneralSystemACE:
             if isinstance(multitime_op, dict):
                 multitime_op = [multitime_op]
             for _mto in multitime_op:
-                run_plist += ["apply_Operator_{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
+                if isinstance(_mto['operator'], str):
+                    run_plist += ["apply_Operator_{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
 
         # output
         # check if output_ops are strings, empty or arrays
@@ -375,6 +377,17 @@ class GeneralSystemACE:
         tgrid = TimeGrid(param)
         t = np.round(np.array(tgrid.get_all()), decimals=10)
 
+        # multitime operators that were not given as strings
+        if multitime_op is not None:
+            for _mto in multitime_op:
+                if isinstance(_mto['operator'], np.ndarray):
+                    if _mto['operator'].shape != (self.dim, self.dim):
+                        raise ValueError("multitime operator has wrong shape: {}, expected: ({},{})".format(_mto['operator'].shape, self.dim, self.dim))
+                    if _mto["applyFrom"] == "left":
+                        fprop.apply_Operator_left(_mto['time'], _mto['operator'], _mto['applyBefore'])
+                    elif _mto["applyFrom"] == "right":
+                        fprop.apply_Operator_right(_mto['time'], _mto['operator'], _mto['applyBefore'])
+
         # rotating frame: changes the energies of the hamiltonian, using the operator in rf_op
         # this is done using the add_Pulse function of ACE, as this can time-dependently change the system hamiltonian
         # note that it automatically adds the hermitian conjugate of rf_op as well, so a factor of 1/2 is needed
@@ -392,14 +405,46 @@ class GeneralSystemACE:
 
         # after potential RF, add pulses
         for pulse in pulses:
-            if self.verbose:
-                print("Adding pulse: {}".format(pulse))
-            # each pulse needs to have a polarization assigned
-            if pulse.polarization not in self.modes:
-                raise ValueError("Pulse polarization {} not in system modes {}".format(pulse.polarization, self.modes.keys()))
+            t_pulse = t
+            # check if pulse is a dict
+            # assumes the dict contains 'polarization', "time" and 'total' keys, for ex.:
+            # pulse = {"polarization": "x", "total": total_pulse_array, "time": t_array}
+            # instead of "polarization" you can also use "channel" as a key
+            # total_pulse_array must contain the complex pulse amplitude at each time point in t_array
+            if isinstance(pulse, dict):
+                if self.verbose:
+                    print("Adding pulse dict")
+                
+                polarization = pulse.get("polarization", None)
+                if polarization is None:
+                    polarization = pulse.get("channel", None)
+                t_pulse = pulse.get("time", None)
+                total_pulse = pulse.get("total", None) * np.pi  # note that we multiply by pi here, so setting the pulse area to 1 corresponds to a pi-pulse.
+
+                if t_pulse is None:
+                    raise ValueError("Pulse dict must contain 'time' key")
+                if polarization is None:
+                    raise ValueError("Pulse dict must contain 'polarization' or 'channel' key")
+                if total_pulse is None:
+                    raise ValueError("Pulse dict must contain 'total' key")
+                
+                if polarization not in self.modes:
+                    raise ValueError("Pulse polarization/channel: {} not in system modes: {}".format(polarization, self.modes.keys()))
+                interaction_op = self.modes[polarization]
+                
+                if len(total_pulse) != len(t_pulse):
+                    raise ValueError("Pulse 'total' length does not match 'time' length")
+            # else, assume it's a Pulse object
+            else:
+                if self.verbose:
+                    print("Adding pulse: {}".format(pulse))
+                # each pulse needs to have a polarization assigned
+                if pulse.polarization not in self.modes:
+                    raise ValueError("Pulse polarization {} not in system modes {}".format(pulse.polarization, self.modes.keys()))
+                total_pulse = pulse.get_total(t) * np.pi  # note that we multiply by pi here, so setting the pulse area to 1 corresponds to a pi-pulse.
+                interaction_op = self.modes[pulse.polarization]
             # add pulse
-            # TODO: add option for pre-calculated pulse array.
-            fprop.add_Pulse((t, -0.5*hbar*np.pi*pulse.get_total(t)), self.modes[pulse.polarization])  # time, complex pulse amplitude, operator    
+            fprop.add_Pulse((t_pulse, -0.5*hbar*total_pulse), interaction_op)  # time, complex pulse amplitude, operator    
 
         # option to return Hamiltonian
         if return_H:
@@ -412,13 +457,17 @@ class GeneralSystemACE:
         PT = ProcessTensors(param)
         # calculate dynamical maps
         if calc_dynmap:
+            if get_M_t is not None:
+                fprop.update(get_M_t,self.dt)
+                return fprop.M
             dynmap = DynamicalMap(fprop, PT, sim, tgrid)
             _dm = np.array(dynmap.E)
-            return [t], _dm
+            return t, _dm
         
         if not outputs_are_strings:
             outp = OutputPrinter(output_ops)
         else:
+            # output operators are strings eg "|0><1|_2"
             outp = OutputPrinter(param)  # empyt output_ops will return full density matrix
         outp.do_extract = True
         sim.run(fprop, PT, initial_state, tgrid, outp)
@@ -426,7 +475,7 @@ class GeneralSystemACE:
         #reshaped = np.vstack([result[0][np.newaxis, :].real, result[1].T])
         return result[0].real, result[1].T
     
-    def dressed_states(self, t_start, t_end, *pulses, lindblad=True, initial=None, rho0=None, rf=True, rf_array=None, firstonly=False, no_pulse=False, colors=None,
+    def dressed_states(self, t_start, t_end, *pulses, initial=None, rho0=None, rf=True, rf_array=None, firstonly=False, no_pulse=False, colors=None,
                        visible_states=None, print_states_t=None, plot=True, t_lim=None, filename="dressed", e_lim=None, return_eigenvectors=False, fix_order=True):
         """
         calculates dressed states using the density matrix from run()
