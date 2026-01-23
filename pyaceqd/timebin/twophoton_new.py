@@ -9,6 +9,8 @@ import os
 from pyaceqd.timebin import timebin_tl
 import time
 import pyaceqd.constants as constants
+from pyaceqd.helpers.timer import Runtimer
+import warnings
 temp_dir = constants.temp_dir
 
 # exemplary options-dict:
@@ -137,7 +139,7 @@ class TwoPhotonTimebinNew(TimeBin):
 
         ops_eell = [Id, sigma_bdag, Id ,sigma_xdag, sigma_b, Id, sigma_x, Id]
 
-        n = 4
+        n = 5
         if not reduced:
             n = 10
         tq = tqdm.tqdm(total=n, disable=not verbose)
@@ -556,39 +558,44 @@ class TwoPhotonTimebinNew(TimeBin):
             _G2[i] = np.trapezoid(temp_t2, t2_array)
         return t1, _G2, np.trapezoid(_G2, t1)*self.gamma_e**2, _G2_t1t2
     
-    def _calc_dynmaps(self):
+    def _calc_dynmaps(self, memory_time=10):
         """
         Calculates dynamical maps for timebin 1 and 2.
-        does not work for phonons.
-        
-        :param self: Description
+        For phonons, this only works if no multi-time operators are used.
+        For guessing the pulse duration, self.gaussian_t is used.
+        :param memory_time: additional time to include after the pulse to capture memory effects
+                            default is 10 ps (typical phonon memory time)
+        :returns:
+        tl_map : time-local map for free evoluiton of a single time step
+        dm_tl1 : dynamical maps spanning the pulses + memory_time for time-bin 1
+        dm_tl2 : dynamical maps spanning the pulses + memory_time for time-bin 2
         """
-        # check if key phonons is in options and if it is True
-        if "phonons" in self.options.keys(): 
-            if self.options["phonons"]:
-                print("Phonons are enabled in the options. Correlation functions will give wrong results.")
-                # raise ValueError("Dynamical maps for time-bin cannot yet be calculated with phonons.")
-        print("Calculating dynamical maps for time-bins...")
+
+        if self.options.get("phonons"):
+            warnings.warn("Phonons are enabled in the options. Be careful when calculating correlation functions.", stacklevel=2)
+        
         options_new = self.options.copy()
         self.prepare_puslefile_tls()
 
         options_new["pulse_file_x"] = self.pulse_file_x1
         options_new["pulse_file_y"] = self.pulse_file_y1
-        result1, dm1 = self.system(0, self.gaussian_t + 10, calc_dynmap=True, **options_new)  # first time-bin
+        with Runtimer(self.verbose, name="dynmaps.system1"):
+            result1, dm1 = self.system(0, self.gaussian_t + memory_time, calc_dynmap=True, **options_new)  # first time-bin
 
         options_new["pulse_file_x"] = self.pulse_file_x2
         options_new["pulse_file_y"] = self.pulse_file_y2
-        result2, dm2 = self.system(0, self.gaussian_t + 10, calc_dynmap=True, **options_new)  # second time-bin
+        with Runtimer(self.verbose, name="dynmaps.system2"):
+            result2, dm2 = self.system(0, self.gaussian_t + memory_time, calc_dynmap=True, **options_new)  # second time-bin
 
-        print("Dynamical maps calculated.")
         _t1 = np.round(np.real(result1[0]),6)  # avoid numerical noise by rounding
         _t2 = np.round(np.real(result2[0]),6)  
         if len(_t1) != len(_t2):
-            print("Warning: time axes of dyn. maps are not the same length. Check if anything is wrong.")
+            warnings.warn("Warning: time axes of dyn. maps are not the same length. Check if anything is wrong.")
         if self.dt < 0.00001:
-            print("Warning: very small time-step, time-local map uses truncation of t to 1e-6.")
-        dm_tl1 = calc_tl_dynmap_pseudo(dm1, _t1)
-        dm_tl2 = calc_tl_dynmap_pseudo(dm2, _t2)
+            warnings.warn("Warning: very small time-step, time-local map uses truncation of t to 1e-6.")
+        with Runtimer(self.verbose, name="dynmaps.calc_tl"):
+            dm_tl1 = calc_tl_dynmap_pseudo(dm1, _t1)
+            dm_tl2 = calc_tl_dynmap_pseudo(dm2, _t2)
         tl_map = dm_tl1[-1]  # last map of the first time-bin
 
         self.precalc_tls = self._calc_binary_steps(tl_map)
