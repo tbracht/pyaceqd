@@ -1,9 +1,42 @@
 from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.general_system_new import GeneralSystemACE
 from pyaceqd.general_system.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
+from pyaceqd.helpers.ace_operators import ketbra, kron
 
 hbar = constants.hbar  # meV*ps
 temp_dir = constants.temp_dir
+
+class Biexciton(GeneralSystemACE):
+    def __init__(self, dt=0.1, gamma_e=1/100, gamma_b=None, delta_xy=0, delta_b=4, shift_x=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None,
+                 initial="|0><0|_4", lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir=""):
+        system_prefix = "b_linear"
+        system_op = []
+        if shift_x:
+            # |0> = G, |1> = X, |2> = Y, |3> = B
+            # shift X and Y symmetrically around 0
+            system_op = ["{}*|3><3|_4".format(-delta_b),"{}*|1><1|_4".format(-delta_xy/2),"{}*|2><2|_4".format(delta_xy/2)]
+        else:
+            # only shift Y, X stays at E=0
+            # this is just a different rotating frame
+            system_op = ["{}*|3><3|_4".format(-delta_b),"{}*|2><2|_4".format(delta_xy)]
+        if lindblad:
+            if gamma_b is None:
+                gamma_b = gamma_e
+            lindblad_ops = [["|0><1|_4",gamma_e],["|0><2|_4",gamma_e],
+                            ["|1><3|_4",gamma_b],["|2><3|_4",gamma_b]]
+
+        threshold = "8"  # threshold for PT generation
+        boson_e_max = 7  # maximum boson energy in meV
+        boson_op = "1*(|1><1|_4 + |2><2|_4) + 2*|3><3|_4"  # operator that couples to phonons
+        modes = {"x": ketbra(1,0,4)+ketbra(3,1,4), "y": ketbra(2,0,4)+ketbra(3,2,4)}  # coupling to x and y polarized light
+        rf_op = ketbra(1,1,4) + ketbra(2,2,4) + 2*ketbra(3,3,4)  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
+        dim_prod=[4]  # subsystem dimensions
+        colors = ["#0000FF", "#FF0000", "#00FF00", "#FF00FF"]  # just some example colors
+        super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
+                            threshold=threshold, boson_e_max=boson_e_max, initial=initial, system_op=system_op, boson_op=boson_op, lindblad_ops=lindblad_ops,
+                            lindblad=lindblad, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir, modes=modes, rf_op=rf_op, dim_prod=dim_prod, colors=colors)
+
 
 def biexciton(t_start, t_end, *pulses, dt=0.5, delta_xy=0, shift_x=True, coupl_xy=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", t_mem=20.48, dressedstates=False, rf=False, rf_file=None, firstonly=False,

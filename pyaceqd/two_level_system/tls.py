@@ -1,11 +1,5 @@
-from asyncio import futures
-import subprocess
 import numpy as np
-import os
-from pyaceqd.tools import export_csv, construct_t, ketbra
-import tqdm
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import wait
+from pyaceqd.helpers.ace_operators import ketbra, kron
 from pyaceqd.general_system.general_system import system_ace_stream
 from pyaceqd.general_system.general_system_new import system_ace, GeneralSystemACE
 from pyaceqd.general_system.general_dressed_states import dressed_states
@@ -14,14 +8,16 @@ import warnings
 import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps
+kB = constants.kB  # meV/K
 temp_dir = constants.temp_dir
 
-class TlS_(GeneralSystemACE):
-    def __init__(self, dt=0.1, gamma_e=1/100, lindblad=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", initial="|0><0|_2"):
+class TLS_(GeneralSystemACE):
+    def __init__(self, dt=0.1, gamma_e=1/100, lindblad=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, J_to_file=None, J_file=None,
+                 factor_ah=None, pt_dir="", e_x=0, initial="|0><0|_2"):
         system_prefix = "tls" 
         threshold = "8"  # threshold for PT generation
         boson_e_max = 7  # maximum boson energy in meV
-        system_op = ["0*|1><1|_2"]  # system hamiltonian operator. Use rotating frame where E_X = 0
+        system_op = ["{}*|1><1|_2".format(e_x)]  # system hamiltonian operator. default uses rotating frame where E_X = 0
         boson_op = "|1><1|_2"  # operator that couples to phonons
         lindblad_ops = [["|0><1|_2", gamma_e]]  # decay of excited state to ground state
         modes = {"x": ketbra(1,0,2)}  # operator |1><0|_2 couples to x-polarized light
@@ -32,7 +28,53 @@ class TlS_(GeneralSystemACE):
                           boson_op=boson_op, lindblad_ops=lindblad_ops, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir,
                           dim_prod=[2], colors=colors, lindblad=lindblad)
         
+class TLSOneSensor(GeneralSystemACE):
+    def __init__(self, dt=0.1, gamma_e=1/100, phonons=False, delta_s=0, epsilon=1e-3, linewidth=0.01, ae=5, temperature=4, verbose=False, pt_file=None,
+                 initial="|0><0|_2 otimes |0><0|_2", lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir=""):
+        system_prefix = "tls_one_sensor"
+        system_op = []
+        system_op.append("{} * (Id_2 otimes |1><1|_2)".format(delta_s))  # sensor Hamiltonian
+        system_op.append("{} * (|1><0|_2 otimes |0><1|_2 + |0><1|_2 otimes |1><0|_2)".format(epsilon))  # sensor coupling
+        lindblad_ops = [["|0><1|_2 otimes Id_2", gamma_e]]  # decay of excited state to ground state
+        lindblad_ops.append(["Id_2 otimes |0><1|_2", linewidth])  # sensor loss
+        threshold = "8"  # threshold for PT generation
+        boson_e_max = 7  # maximum boson energy in meV
+        boson_op = "|1><1|_2 otimes Id_2"  # operator that couples to phonons
+        modes = {"x": kron(ketbra(1,0,2), np.eye(2))}  # operator |1><0|_2 otimes Id_2 couples to x-polarized light
+        rf_op = kron(ketbra(1,1,2), np.eye(2))  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
+        dim_prod=[2,2]  # TLS + sensor dimensions
+        colors = ["#0000FF", "#FF0000", "#00FF00", "#FF00FF"]  # just some example colors
+        super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix, 
+                         threshold=threshold, boson_e_max=boson_e_max, initial=initial, system_op=system_op, boson_op=boson_op, lindblad_ops=lindblad_ops, 
+                         lindblad=lindblad, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir, modes=modes, rf_op=rf_op, dim_prod=dim_prod, colors=colors)
 
+class TLSTwoSensor(GeneralSystemACE):
+    def __init__(self, dt=0.1, gamma_e=1/100, phonons=False, delta_s1=0, delta_s2=0, epsilon=1e-3, linewidth1=0.01, linewidth2=0.01, ae=5, temperature=4, verbose=False, pt_file=None,
+                 initial="|0><0|_2 otimes |0><0|_2 otimes |0><0|_2", lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir=""):
+        system_prefix = "tls_two_sensor"
+        system_op = []
+        system_op.append("{} * (Id_2 otimes |1><1|_2 otimes Id_2)".format(delta_s1))  # sensor 1 Hamiltonian
+        system_op.append("{} * (Id_2 otimes Id_2 otimes |1><1|_2)".format(delta_s2))  # sensor 2 Hamiltonian
+        system_op.append("{} * (|1><0|_2 otimes |0><1|_2 otimes Id_2 + |0><1|_2 otimes |1><0|_2 otimes Id_2)".format(epsilon))  # sensor 1 coupling
+        system_op.append("{} * (|1><0|_2 otimes Id_2 otimes |0><1|_2 + |0><1|_2 otimes Id_2 otimes |1><0|_2)".format(epsilon))  # sensor 2 coupling
+        lindblad_ops = [["|0><1|_2 otimes Id_2 otimes Id_2", gamma_e]]  # decay of excited state to ground state
+        lindblad_ops.append(["Id_2 otimes |0><1|_2 otimes Id_2", linewidth1])  # sensor 1 loss
+        lindblad_ops.append(["Id_2 otimes Id_2 otimes |0><1|_2", linewidth2])  # sensor 2 loss
+        threshold = "8"  # threshold for PT generation
+        boson_e_max = 7  # maximum boson energy in meV
+        boson_op = "|1><1|_2 otimes Id_2 otimes Id_2"  # operator that couples to phonons
+        modes = {"x": kron(ketbra(1,0,2),np.eye(2), np.eye(2))}  # operator |1><0|_2 otimes Id_2 otimes Id_2 couples to x-polarized light
+        rf_op = kron(ketbra(1,1,2), np.eye(2), np.eye(2))  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
+        dim_prod=[2,2,2]  # TLS + sensor1 + sensor2 dimensions
+        colors = ["#0000FF", "#FF0000", "#00FF00", "#FF00FF", "#00FFFF", "#FFFF00", "#888888", "#000000"]  # just some example colors
+        super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
+                            threshold=threshold, boson_e_max=boson_e_max, initial=initial, system_op=system_op, boson_op=boson_op, lindblad_ops=lindblad_ops,
+                            lindblad=lindblad, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir, modes=modes, rf_op=rf_op, dim_prod=dim_prod, colors=colors)
+
+# class TwoHotState(GeneralSystemACE):
+
+
+  
 
 def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
          multitime_op=None, pulse_file=None, pulse_file_x=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, LO_params=None, dressedstates=False, rf=False, rf_file=None, firstonly=False,\
@@ -95,6 +137,39 @@ def tls(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, t_mem=6.4
                   multitime_op=multitime_op, pulse_file_x=pulse_file, system_prefix=system_prefix, threshold=str(int(threshold)), threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
                   system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only, LO_params=LO_params, dressedstates=dressedstates, rf_op=rf_op, rf_file=rf_file,
                   firstonly=firstonly, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, use_infinite=use_infinite, calc_dynmap=calc_dynmap, rho0=rho0,get_M_t=get_M_t)
+    return result
+
+def twohotstate(t_start, t_end, *pulses,dt=0.2, lindblad=True, gamma_e=0.0058, delta_E1=4.6, delta_E2=10.4, gamma_01=3/1000, factor_rates1=4, 
+                gamma_02=0.002, factor_rates2=2, phonon_factor=1, phonons=False, temperature=8, ae=8.0, factor_ah=None, 
+                verbose=False, pt_file=None, prepare_only=False, calc_dynmap=False, rho0=None,
+                multitime_op=None, threshold=8, output_ops=["|0><0|_4", "|1><1|_4", "|2><2|_4", "|3><3|_4"], initial="|0><0|_4", J_to_file=None, **options): 
+    system_prefix = "twohotstate_"
+    # |0>  = G, |1> = X, |2> = x*, |3> = x**
+    system_op = ["{}*|3><3|_4".format(-delta_E2),"{}*|2><2|_4".format(-delta_E1)]
+    boson_op = "{:.3f}*(|1><1|_4 + |2><2|_4 + |3><3|_4)".format(phonon_factor)
+    lindblad_ops = []
+    if lindblad: 
+        n_BE1 = 1/(np.exp(delta_E1/(kB*temperature))-1)
+        n_BE21 = 1/(np.exp((delta_E2-delta_E1)/(kB*temperature))-1)
+        lindblad_ops = [["|0><1|_4",gamma_e], ["|1><2|_4",gamma_01*(1+n_BE1)],["|2><1|_4", factor_rates1*gamma_01*n_BE1],
+                         ["|2><3|_4",factor_rates1*gamma_02*(1+n_BE21)],["|3><1|_4", factor_rates2*gamma_02*n_BE21]]
+
+    # note that the TLS uses x-polar
+    modes = {"x": ketbra(1,0,4)}
+    for p in pulses:
+        pol = getattr(p, "polarization", None)
+        if pol is None:
+            warnings.warn("Pulse object missing 'polarization' attribute; skipping interaction_op assignment.", UserWarning)
+            continue
+        if pol not in modes:
+            warnings.warn(f"Pulse polarization '{pol}' not found in modes; available: {list(modes.keys())}. Skipping interaction_op assignment.", UserWarning)
+            continue
+        p.interaction_op = modes[pol]
+
+    result = system_ace(t_start, t_end, *pulses, dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, \
+                  multitime_op=multitime_op, system_prefix=system_prefix, threshold=str(int(threshold)), boson_e_max=7,
+                  system_op=system_op, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, output_ops=output_ops, prepare_only=prepare_only,
+                  J_to_file=J_to_file, factor_ah=factor_ah,calc_dynmap=calc_dynmap, rho0=rho0)
     return result
 
 def tls_new(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, pt_file=None, \
