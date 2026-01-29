@@ -6,6 +6,7 @@ setup(
     packages=find_packages(),
     package_data={
         'pyaceqd.two_time': ['*.so'],  # This will include the compiled .so file
+        'pyaceqd.timebin': ['*.so'],
     },
     install_requires=[
         'numpy',

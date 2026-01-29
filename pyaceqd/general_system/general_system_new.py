@@ -82,12 +82,12 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
     else:
         params += ["Boson_SysOp {{ {} }}".format(boson_op)]
         params += ["Boson_J_type QDPhonon"]
-        params += ["Boson_J_a_e {}".format(ae)]
+        params += ["Boson_J_a_e {}".format(ae*1.0)]
         if factor_ah is not None:
-            params += ["Boson_J_a_h {}".format(ae/factor_ah)]
+            params += ["Boson_J_a_h {}".format(1.0*ae/factor_ah)]
     if J_to_file:
         params += ["Boson_J_print {} 0 15 2000".format(J_to_file)]
-    params += ["temperature {}".format(temperature)]
+    params += ["temperature {}".format(temperature*1.0)]
     params += ["dont_propagate true"]
     params += ["write_PT {}".format(filename)]
     if verbose:
@@ -274,8 +274,8 @@ class GeneralSystemACE:
         self.phonons = phonons
         if self.phonons:
             # parameters for process tensor calculation
-            self.ae = ae
-            self.temperature = temperature
+            self.ae = ae * 1.0  # ensure float
+            self.temperature = temperature * 1.0
             if boson_op is None:
                 raise ValueError("boson_op must be provided when phonons=True")
             self.boson_op = boson_op

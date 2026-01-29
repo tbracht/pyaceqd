@@ -6,17 +6,27 @@
 import numpy as np
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
-from pyaceqd.tools import construct_t, simple_t_gaussian, export_csv
 from pyaceqd.helpers.dynamical_map import calc_tl_dynmap_pseudo, extract_dms
-from pyaceqd.helpers.ace_operators import op_to_matrix
-from pyaceqd.helpers.time_axes import UnregularTimeAxis
+from pyaceqd.helpers.time_axes import UnregularTimeAxis, round_to_dt
+import warnings
 try:
     from pyaceqd.two_time import propagate_tau_module
-except ImportError:
-    print("WARNING: propagate_tau_module not found, using pure python implementation for G2 and G1 calculations.")
+except ImportError as exc:
+    _PROPAGATE_TAU_TL_IMPORT_ERROR = exc
+    warnings.warn("propagate_tau_module not found, time-local acceleration unavailable.",
+                  ImportWarning,
+                  stacklevel=2,)
     propagate_tau_module = None
 import time
 import pyaceqd.constants as constants
+
+def _require_propagate_tau_tl() -> None:
+    if propagate_tau_module is None:
+        raise RuntimeError(
+            "The optional Fortran module 'timebin_tl' is not available. "
+            "Reinstall with Fortran build enabled to use time-local accelerated routines."
+        ) from _PROPAGATE_TAU_TL_IMPORT_ERROR
+
 temp_dir = constants.temp_dir
 
 def get_max_pulse_t(pulses):
@@ -52,6 +62,9 @@ class Indistinguishability:
         
         self.dim = system.dim
         self.dt = system.dt
+        if self.dt > dt_small:
+            raise ValueError("dt_small for purity calculation cannot be smaller than system dt: {} > {}".format(dt_small, self.dt))
+        self.phonons = system.phonons
         if not system.lindblad:
             print("WARNING: system is not using lindblad operators, eg. no decay.")
         if dt_big is None:
@@ -61,11 +74,12 @@ class Indistinguishability:
         if sigma_x.shape != (self.dim,self.dim) or sigma_xdag.shape != (self.dim,self.dim):
             raise ValueError("Sigma_x or sigma_xdag operator are dims: {}, {}, but system dim is {}x{}".format(sigma_x.shape, sigma_xdag.shape, self.dim, self.dim))
 
-        time_generator = UnregularTimeAxis(0, tb, self.max_pulse_t, dt_small=dt_small, dt_big=dt_big, pulses=pulses, factor_tau=factor_tau, include_tend=add_tend, round_dt=True)
+        time_generator = UnregularTimeAxis(0, tb, self.max_pulse_t + self.t_mem, dt_small=dt_small, dt_big=dt_big, pulses=pulses, factor_tau=factor_tau, include_tend=add_tend, round_dt=True)
 
         self.t1 = time_generator.time_axis_two_step(exponential_part=exponential_stepping)
         if variable_stepping:
-            self.t1 = time_generator.time_axis_variable(exponential_part=exponential_stepping)
+            variable_dt_max = dt_big
+            self.t1 = time_generator.time_axis_variable(exponential_part=exponential_stepping, dt_big_variable=variable_dt_max)
         if regular_stepping:
             self.t1 = time_generator.time_axis_regular()
         
@@ -90,7 +104,6 @@ class Indistinguishability:
             print("complete t axis for purity calculation: ", len(self.t_axis_complete), " points")
             n_tau = self.factor_tau*int(self.tb/self.dt)
             print("tau axis for purity calculation: ", n_tau + 1, " points")
-            print("Total: ", (n_tau + 1), " points in G2 matrix.")
             print("Memory usage estimate: {:.2f} MB (complex128 assumed).".format((n_tau + 1)*16/(1024*1024)))
 
     def calc_timedynamics(self, output_ops=None, t_end=None):
@@ -207,7 +220,7 @@ class Indistinguishability:
         tend = (self.factor_t + factor_tau)*self.tb
         n_tau = factor_tau*int(self.tb/self.dt)
         t2 = np.linspace(0, factor_tau*self.tb, n_tau + 1)
-        t, val = self.system.run(0, tend, output_ops=output_ops)
+        t, val = self.system.run(0, tend, *self.pulses, output_ops=output_ops)
         val = np.squeeze(val)
         val = np.abs(val)
         # <x(t)>*<x(t+tau)>
@@ -413,7 +426,8 @@ class Indistinguishability:
         return dms[1]  # return the second dynamic map, which is the one we need for the phonon dynamics
 
     def G1_tl_phonons(self):
-        t_apply = self.max_pulse_t + self.t_mem + 5*self.dt
+        _require_propagate_tau_tl()
+        t_apply = np.round(round_to_dt(self.max_pulse_t + self.t_mem + 5*self.dt, self.dt),6)
         _mto = {"operator": self.sigma_x, "applyFrom": "left", "applyBefore": False, "time": t_apply}
         tl_map, dms_sep = self.get_tl_phonons(mtos=[_mto], t_mtos=[t_apply])
 
@@ -471,7 +485,8 @@ class Indistinguishability:
         return tau, g1
     
     def G2_tl_phonons(self):
-        t_apply = self.max_pulse_t + self.t_mem + 5*self.dt
+        _require_propagate_tau_tl()
+        t_apply = np.round(round_to_dt(self.max_pulse_t + self.t_mem + 5*self.dt, self.dt),6)
         _mto = {"operator": self.sigma_x, "applyFrom": "left", "applyBefore": False, "time": t_apply}
         _mto2 = {"operator": self.sigma_xdag, "applyFrom": "right", "applyBefore": False, "time": t_apply}
         tl_map, dms_sep = self.get_tl_phonons(mtos=[_mto,_mto2], t_mtos=[t_apply])
@@ -524,6 +539,7 @@ class Indistinguishability:
         return tau, g2
 
     def G2_tl(self):
+        _require_propagate_tau_tl()
         dim = np.shape(self.sigma_x)[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
@@ -554,6 +570,7 @@ class Indistinguishability:
         return tau, g2
     
     def G1_tl(self):
+        _require_propagate_tau_tl()
         dim = np.shape(self.sigma_x)[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|

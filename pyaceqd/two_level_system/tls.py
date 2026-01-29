@@ -13,9 +13,9 @@ temp_dir = constants.temp_dir
 
 class TLS_(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, lindblad=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None, J_to_file=None, J_file=None,
-                 factor_ah=None, pt_dir="", e_x=0, initial="|0><0|_2"):
+                 factor_ah=None, pt_dir="", e_x=0, initial="|0><0|_2", threshold=8):
         system_prefix = "tls" 
-        threshold = "8"  # threshold for PT generation
+        threshold = str(int(threshold))  # threshold for PT generation
         boson_e_max = 7  # maximum boson energy in meV
         system_op = ["{}*|1><1|_2".format(e_x)]  # system hamiltonian operator. default uses rotating frame where E_X = 0
         boson_op = "|1><1|_2"  # operator that couples to phonons

@@ -261,12 +261,14 @@ class UnregularTimeAxis:
             t_array = np.append(t_array, self.tend)
         return round_to_dt(t_array, self.dt_small)
     
-    def time_axis_variable(self, exponential_part=False):
+    def time_axis_variable(self, exponential_part=False, dt_big_variable=None):
         """
         variable time axis up to t_switch, then exponential spacing up to tend
         always rounded to dt_small
         """
-        t_gaussian = get_gaussian_t(self.t0, self.t_switch, *self.pulses, dt_max=self.dt_big, dt_min=self.dt_small, interval_per_step=0.05)
+        if dt_big_variable is None:
+            dt_big_variable = self.dt_big
+        t_gaussian = get_gaussian_t(self.t0, self.t_switch, *self.pulses, dt_max=dt_big_variable, dt_min=self.dt_small, interval_per_step=0.05)
         if exponential_part:
             t_exp = self._get_exponential_axis()
             t_array = np.concatenate((t_gaussian, t_exp), axis=0)
