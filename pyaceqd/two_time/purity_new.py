@@ -226,6 +226,16 @@ class Indistinguishability:
         # <x(t)>*<x(t+tau)>
         t1 = np.linspace(0, self.factor_t*self.tb, int((self.factor_t*self.tb)/self.dt) + 1)
         
+        # Use optimized Fortran implementation if available
+        # if propagate_tau_module is not None:
+        #     G0_tau = propagate_tau_module.sliding_window_correlation(
+        #         val=np.ascontiguousarray(val, dtype=np.float64),
+        #         time_t1=np.ascontiguousarray(t1, dtype=np.float64),
+        #         n_t1=len(t1),
+        #         n_tau=len(t2)-1
+        #     )
+        # else:
+            # Fallback to Python implementation
         G0_tau = np.zeros(len(t2))  # Only allocate final result array
         for j in range(len(t2)):
             # Create temporary view of shifted values
@@ -253,35 +263,56 @@ class Indistinguishability:
 
         rho0 = np.zeros((self.dim,self.dim), dtype=complex)
         rho0[0,0] = 1  # initial state, rho0 = |0><0|
-        rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
-        rho_t[0] = rho0.reshape(self.dim**2)  # initial state, rho0 = |0><0|
-        rho_t[-1] = rho0.reshape(self.dim**2)  # final state, rho0 = |0><0| just for convenience, will be overwritten
-        for j in range(factors):
-            # from 0 to len_tb-1, we have the pulses
-            # do this in each time bin
-            for i in range(1,len(self.tl_dms)):
-                rho_t[i+j*len_tb] = np.dot(self.tl_dms[i-1], rho_t[i-1+j*len_tb])
-            # now apply the time-local dynamical map
-            for i in range(len(self.tl_dms),len_tb+1):
-                rho_t[i+j*len_tb] = np.dot(self.tl_map, rho_t[i-1+j*len_tb])
         
-        val = np.zeros_like(t_total)
-        op = self.sigma_xdag @ self.sigma_x
-        # val = np.einsum('ij,tji->t', op, rho_t.reshape(len(t_total), self.dim, self.dim))  # calculate <x(t)> for each time step
-        for i in range(len(t_total)):
-            val[i] = np.real(np.trace(op@rho_t[i].reshape((self.dim, self.dim))))
-
-        # More memory efficient version using views
-        # this is in principle similar as calculating
-        # an autocorrelation with a sliding window of length len(t1)
-        G0_tau = np.zeros(len(t2))  # Only allocate final result array
-        for j in range(len(t2)):
-            # Create temporary view of shifted values
-            val_shifted = val[j:j+len(t1)]
-            # Calculate product for this slice directly
-            product = val[:len(val_shifted)] * val_shifted
-            # Integrate this slice
-            G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
+        # Use optimized Fortran implementation if available
+        if propagate_tau_module is not None:
+            dm_block = np.asfortranarray(self.tl_dms.transpose(1, 2, 0))
+            op = self.sigma_xdag @ self.sigma_x
+            val = propagate_tau_module.apply_dynamical_maps_and_trace(
+                dm_block=dm_block,
+                dm_s=self.tl_map,
+                rho_init=rho0.reshape(self.dim**2),
+                n_map=len(self.tl_dms),
+                n_tb=len_tb,
+                n_factors=factors,
+                dim=self.dim,
+                op=op
+            )
+        else:
+            # Fallback to Python implementation
+            rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
+            rho_t[0] = rho0.reshape(self.dim**2)
+            rho_t[-1] = rho0.reshape(self.dim**2)
+            for j in range(factors):
+                # from 0 to len_tb-1, we have the pulses
+                # do this in each time bin
+                for i in range(1,len(self.tl_dms)):
+                    rho_t[i+j*len_tb] = np.dot(self.tl_dms[i-1], rho_t[i-1+j*len_tb])
+                # now apply the time-local dynamical map
+                for i in range(len(self.tl_dms),len_tb+1):
+                    rho_t[i+j*len_tb] = np.dot(self.tl_map, rho_t[i-1+j*len_tb])
+            
+            val = np.zeros_like(t_total)
+            op = self.sigma_xdag @ self.sigma_x
+            # val = np.einsum('ij,tji->t', op, rho_t.reshape(len(t_total), self.dim, self.dim))  # calculate <x(t)> for each time step
+            for i in range(len(t_total)):
+                val[i] = np.real(np.trace(op@rho_t[i].reshape((self.dim, self.dim))))
+        # calculate <x(t)>*<x(t+tau)>, integrated over t
+        # Use optimized Fortran implementation if available
+        if propagate_tau_module is not None:
+            G0_tau = propagate_tau_module.sliding_window_correlation(
+                val=np.ascontiguousarray(val, dtype=np.float64),
+                time_t1=np.ascontiguousarray(t1, dtype=np.float64),
+                n_t1=len(t1),
+                n_tau=len(t2)-1
+            )
+        else:
+            # Fallback to Python implementation
+            G0_tau = np.zeros(len(t2))
+            for j in range(len(t2)):  # loop over tau
+                val_shifted = val[j:j+len(t1)]  # x(t+tau)
+                product = val[:len(val_shifted)] * val_shifted
+                G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
         return t2, G0_tau
     
     def simple_propagation_tl_phonons(self):
@@ -301,32 +332,56 @@ class Indistinguishability:
 
         rho0 = np.zeros((self.dim,self.dim), dtype=complex)
         rho0[0,0] = 1  # initial state, rho0 = |0><0|
-        rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
-        rho_t[0] = rho0.reshape(self.dim**2)  # initial state, rho0 = |0><0|
-        rho_t[-1] = rho0.reshape(self.dim**2)  # final state, rho0 = |0><0| just for convenience, will be overwritten
-        for j in range(factors):
-            # from 0 to len_tb-1, we have the pulses
-            # do this in each time bin
-            for i in range(1,len(dms_sep1)):
-                rho_t[i+j*len_tb] = np.dot(dms_sep1[i-1], rho_t[i-1+j*len_tb])
-            # now apply the time-local dynamical map
-            for i in range(len(dms_sep1),len_tb+1):
-                rho_t[i+j*len_tb] = np.dot(tl_map, rho_t[i-1+j*len_tb])
         
-        val = np.zeros_like(t_total)
-        op = self.sigma_xdag @ self.sigma_x
-        # calculate <x(t)> for each time step
-        for i in range(len(t_total)):
-            val[i] = np.real(np.trace(op@rho_t[i].reshape((self.dim, self.dim))))
+        # Use optimized Fortran implementation if available
+        if propagate_tau_module is not None:
+            dm_block = np.asfortranarray(dms_sep1.transpose(1, 2, 0))
+            op = self.sigma_xdag @ self.sigma_x
+            val = propagate_tau_module.apply_dynamical_maps_and_trace(
+                dm_block=dm_block,
+                dm_s=tl_map,
+                rho_init=rho0.reshape(self.dim**2),
+                n_map=len(dms_sep1),
+                n_tb=len_tb,
+                n_factors=factors,
+                dim=self.dim,
+                op=op
+            )
+        else:
+            # Fallback to Python implementation
+            rho_t = np.ones((len(t_total), self.dim**2), dtype=complex)
+            rho_t[0] = rho0.reshape(self.dim**2)
+            rho_t[-1] = rho0.reshape(self.dim**2)
+            for j in range(factors):
+                # from 0 to len_tb-1, we have the pulses
+                # do this in each time bin
+                for i in range(1,len(dms_sep1)):
+                    rho_t[i+j*len_tb] = np.dot(dms_sep1[i-1], rho_t[i-1+j*len_tb])
+                # now apply the time-local dynamical map
+                for i in range(len(dms_sep1),len_tb+1):
+                    rho_t[i+j*len_tb] = np.dot(tl_map, rho_t[i-1+j*len_tb])
+            
+            val = np.zeros_like(t_total)
+            op = self.sigma_xdag @ self.sigma_x
+            # calculate <x(t)> for each time step
+            for i in range(len(t_total)):
+                val[i] = np.real(np.trace(op@rho_t[i].reshape((self.dim, self.dim))))
 
-        G0_tau = np.zeros(len(t2))  # Only allocate final result array
-        for j in range(len(t2)):
-            # Create temporary view of shifted values
-            val_shifted = val[j:j+len(t1)]
-            # Calculate product for this slice directly
-            product = val[:len(val_shifted)] * val_shifted
-            # Integrate this slice
-            G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
+        # Use optimized Fortran implementation if available
+        if propagate_tau_module is not None:
+            G0_tau = propagate_tau_module.sliding_window_correlation(
+                val=np.ascontiguousarray(val, dtype=np.float64),
+                time_t1=np.ascontiguousarray(t1, dtype=np.float64),
+                n_t1=len(t1),
+                n_tau=len(t2)-1
+            )
+        else:
+            # Fallback to Python implementation
+            G0_tau = np.zeros(len(t2))
+            for j in range(len(t2)):
+                val_shifted = val[j:j+len(t1)]
+                product = val[:len(val_shifted)] * val_shifted
+                G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
         return t2, G0_tau
 
     def get_tl(self, t_mem=None):
@@ -562,7 +617,7 @@ class Indistinguishability:
         # multi-time operators as matrices
         opA_mat = self.sigma_xdag
         opC_mat = self.sigma_x
-        opB_mat = opA_mat @ opC_mat
+        opB_mat = self.sigma_xdag @ self.sigma_x
         g2 = propagate_tau_module.calc_twotime_parallel_block(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),
                                                               n_tb=int(self.tb/self.dt),nx_tau=self.factor_tau,dim=dim,
                                                               opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t_axis_complete,

@@ -231,7 +231,7 @@ subroutine calc_twotime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
     complex(8) :: rho_buffer(dim*dim, n_t)
     integer :: j_array(n_t)
     real(8) :: weights(n_t)
-    
+
     result = 0.0d0
 
     rho_vec = rho_init
@@ -758,3 +758,97 @@ subroutine calc_onetime_simple_phonon(dm_taucs2, dm_sep1, dm_sep2, dm_s, rho_ini
     end do
    !$omp end parallel do
 end subroutine calc_onetime_simple_phonon
+
+subroutine sliding_window_correlation(val, time_t1, n_t1, n_tau, result)
+    ! Compute sliding window autocorrelation with trapezoidal integration
+    ! result(j+1) = integral of val(k) * val(k+j) over time_t1(1:length)
+    ! where length = min(n_t1, n_t1 + n_tau - j) handles shrinking window
+    use utils
+    implicit none
+    integer, intent(in) :: n_t1, n_tau
+    real(8), intent(in) :: val(n_t1 + n_tau), time_t1(n_t1)
+    real(8), intent(out) :: result(n_tau + 1)
+
+    ! Local variables
+    integer :: j, k, length
+    real(8) :: integral
+    real(8), allocatable :: weights(:), time_slice(:)
+
+    !$omp parallel do private(j, k, length, integral, weights, time_slice)
+    do j = 0, n_tau
+        ! Calculate length of valid overlap for this tau value
+        length = min(n_t1, n_t1 + n_tau - j)
+        
+        ! Allocate arrays for this iteration
+        allocate(weights(length))
+        allocate(time_slice(length))
+        
+        ! Extract time slice and compute weights
+        time_slice(1:length) = time_t1(1:length)
+        weights = get_weights(length, time_slice)
+        
+        ! Compute integral using trapezoidal weights
+        integral = 0.0d0
+        do k = 1, length
+            integral = integral + weights(k) * val(k) * val(k + j)
+        end do
+        
+        result(j + 1) = integral
+        
+        ! Deallocate arrays
+        deallocate(weights)
+        deallocate(time_slice)
+    end do
+    !$omp end parallel do
+end subroutine sliding_window_correlation
+
+subroutine apply_dynamical_maps_and_trace(dm_block, dm_s, rho_init, n_map, n_tb, n_factors, dim, op, val)
+    ! Apply time-local dynamical maps to propagate density matrix and compute trace
+    ! For each factor (time bin repetition):
+    !   - Apply dm_block(1:n_map) sequentially
+    !   - Apply dm_s for remaining time steps up to n_tb
+    !   - Compute val(i) = real(trace(op @ rho(i)))
+    implicit none
+    integer, intent(in) :: dim, n_map, n_tb, n_factors
+    complex(8), intent(in) :: dm_block(dim*dim, dim*dim, n_map), dm_s(dim*dim, dim*dim)
+    complex(8), intent(in) :: rho_init(dim*dim), op(dim, dim)
+    real(8), intent(out) :: val(n_factors*n_tb + 1)
+
+    ! Local variables
+    integer :: j, i, l, idx
+    complex(8) :: rho_vec(dim*dim), rho_temp(dim*dim)
+    complex(8) :: rho_mtx(dim, dim), tmp(dim, dim)
+
+    ! Initial state
+    rho_vec = rho_init
+    rho_mtx = reshape(rho_vec, [dim, dim])
+    tmp = matmul(op, rho_mtx)
+    val(1) = real(sum([(tmp(l,l), l=1,dim)]))
+
+    idx = 1
+    do j = 0, n_factors - 1
+        ! Apply time-dependent maps (dm_block)
+        do i = 1, n_map
+            call zgemv('N', dim*dim, dim*dim, (1.0d0,0.0d0), dm_block(:,:,i), dim*dim, &
+                       rho_vec, 1, (0.0d0,0.0d0), rho_temp, 1)
+            rho_vec = rho_temp
+            idx = idx + 1
+            ! Compute trace
+            rho_mtx = reshape(rho_vec, [dim, dim])
+            tmp = matmul(op, rho_mtx)
+            val(idx) = real(sum([(tmp(l,l), l=1,dim)]))
+        end do
+        
+        ! Apply time-local stationary map (dm_s)
+        do i = n_map + 1, n_tb
+            call zgemv('N', dim*dim, dim*dim, (1.0d0,0.0d0), dm_s, dim*dim, &
+                       rho_vec, 1, (0.0d0,0.0d0), rho_temp, 1)
+            rho_vec = rho_temp
+            idx = idx + 1
+            ! Compute trace
+            rho_mtx = reshape(rho_vec, [dim, dim])
+            tmp = matmul(op, rho_mtx)
+            val(idx) = real(sum([(tmp(l,l), l=1,dim)]))
+        end do
+    end do
+end subroutine apply_dynamical_maps_and_trace
