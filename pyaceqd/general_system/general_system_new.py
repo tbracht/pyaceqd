@@ -99,8 +99,9 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
     proc.start()
     while not os.path.exists(filename+"_initial"):
         time.sleep(0.2)
-        if not proc.is_alive() and not os.path.exists(filename+"_initial"):
-            break
+        if not os.path.exists(filename+"_initial"):
+            if not proc.is_alive():
+                raise RuntimeError("PT generation process terminated unexpectedly. There may be an error in the declaration of your system, or a different ACE Error.")
     # Ensure worker exits cleanly
     proc.join(timeout=3)
     if proc.is_alive():
