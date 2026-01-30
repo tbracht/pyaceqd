@@ -23,7 +23,7 @@ import pyaceqd.constants as constants
 def _require_propagate_tau_tl() -> None:
     if propagate_tau_module is None:
         raise RuntimeError(
-            "The optional Fortran module 'timebin_tl' is not available. "
+            "The optional Fortran module 'propagate_tau_module' is not available. "
             "Reinstall with Fortran build enabled to use time-local accelerated routines."
         ) from _PROPAGATE_TAU_TL_IMPORT_ERROR
 
@@ -240,6 +240,8 @@ class Indistinguishability:
         for j in range(len(t2)):
             # Create temporary view of shifted values
             val_shifted = val[j:j+len(t1)]
+            # if len(val_shifted) != len(t1):
+            #     print(len(val_shifted), len(t1))
             # Calculate product for this slice directly
             product = val[:len(val_shifted)] * val_shifted
             # Integrate this slice
