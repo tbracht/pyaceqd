@@ -231,8 +231,7 @@ subroutine calc_twotime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
     complex(8) :: rho_buffer(dim*dim, n_t)
     integer :: j_array(n_t)
     real(8) :: weights(n_t)
-
-    weights = get_weights(n_t, time_sparse_round)
+    
     result = 0.0d0
 
     rho_vec = rho_init
@@ -248,7 +247,9 @@ subroutine calc_twotime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
     tmp = matmul(opC, rho_mtx)
     tmp = matmul(opB, tmp)
     tmp = matmul(opA, tmp)
-    result(1) = weights(1) * abs(sum([(tmp(l,l), l=1,dim)])) ** exponent
+
+    weights = get_weights(n_t, time_sparse_round)
+    result(1) = weights(1) * (abs(sum([(tmp(l,l), l=1,dim)])) ** exponent)
     j = 1
     do i=1, n_t
         ! Step 2: propagate rho_init up to time(j)
@@ -283,7 +284,7 @@ subroutine calc_twotime_parallel_block(dm_block, dm_s, rho_init, n_tb, nx_tau, n
         ! call propagate_tau(dm_tl, rho_res, n_tau, dim, j, rho_out)
         ! Step 6: compute result(2:) = Tr(opA * rho_tau)
     end do
-    !$omp parallel do private(i, j, k, l, rho_res, tmp, rho_temp)
+    !$omp parallel do private(i, j, k, l, rho_res, tmp, rho_temp) reduction(+:result)
     do i = 1, n_t
         rho_res = rho_buffer(:,i)
         j = j_array(i)
