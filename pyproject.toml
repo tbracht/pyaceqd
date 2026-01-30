@@ -1,0 +1,23 @@
+[build-system]
+requires = [
+    "meson-python>=0.15",
+    "meson>=1.2",
+    "ninja",
+    "numpy>=1.20",
+]
+build-backend = "mesonpy"
+
+[project]
+name = "pyaceqd"
+version = "0.0.1"
+description = "ACE-based simulations with optional Fortran acceleration"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "tqdm",
+    "scipy",
+    "tabulate",
+    "pybind11",
+]
