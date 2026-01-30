@@ -761,8 +761,7 @@ end subroutine calc_onetime_simple_phonon
 
 subroutine sliding_window_correlation(val, time_t1, n_t1, n_tau, result)
     ! Compute sliding window autocorrelation with trapezoidal integration
-    ! result(j+1) = integral of val(k) * val(k+j) over time_t1(1:length)
-    ! where length = min(n_t1, n_t1 + n_tau - j) handles shrinking window
+    ! result(j+1) = integral of val(k) * val(k+j) over time_t1
     use utils
     implicit none
     integer, intent(in) :: n_t1, n_tau
@@ -770,34 +769,21 @@ subroutine sliding_window_correlation(val, time_t1, n_t1, n_tau, result)
     real(8), intent(out) :: result(n_tau + 1)
 
     ! Local variables
-    integer :: j, k, length
+    integer :: j, k
     real(8) :: integral
-    real(8), allocatable :: weights(:), time_slice(:)
+    real(8) :: weights(n_t1)
 
-    !$omp parallel do private(j, k, length, integral, weights, time_slice)
+    weights = get_weights(n_t1, time_t1)
+
+    !$omp parallel do private(j, k, integral)
     do j = 0, n_tau
-        ! Calculate length of valid overlap for this tau value
-        length = min(n_t1, n_t1 + n_tau - j)
-        
-        ! Allocate arrays for this iteration
-        allocate(weights(length))
-        allocate(time_slice(length))
-        
-        ! Extract time slice and compute weights
-        time_slice(1:length) = time_t1(1:length)
-        weights = get_weights(length, time_slice)
-        
         ! Compute integral using trapezoidal weights
         integral = 0.0d0
-        do k = 1, length
+        do k = 1, n_t1
             integral = integral + weights(k) * val(k) * val(k + j)
         end do
         
         result(j + 1) = integral
-        
-        ! Deallocate arrays
-        deallocate(weights)
-        deallocate(time_slice)
     end do
     !$omp end parallel do
 end subroutine sliding_window_correlation
