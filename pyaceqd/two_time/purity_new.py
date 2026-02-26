@@ -64,6 +64,8 @@ class Indistinguishability:
         self.dt = system.dt
         if self.dt > dt_small:
             raise ValueError("dt_small for purity calculation cannot be smaller than system dt: {} > {}".format(dt_small, self.dt))
+        if np.mod(dt_small, self.dt) != 0:
+            raise ValueError("dt_small for purity calculation must be a multiple of system dt: {} % {} != 0".format(dt_small, self.dt))
         self.phonons = system.phonons
         if not system.lindblad:
             print("WARNING: system is not using lindblad operators, eg. no decay.")

@@ -253,7 +253,7 @@ def system_ace(t_start, t_end, *pulses, dt=0.01, phonons=False, ae=3.0, temperat
 class GeneralSystemACE:
     def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7, initial=None,
                  system_op=["0*|1><1|_2"], boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
-                 colors=None):
+                 colors=None, propagate_Taylor=None):
         """
         ACE: separate calculation for the process tensor, which can be used to simulate long time scales with interaction to the environment.
         """
@@ -265,6 +265,16 @@ class GeneralSystemACE:
             self.plist_base += ["add_Hamiltonian {{ {} }}".format(_op)]
         self.dt = dt
         self.plist_base += ["dt {}".format(dt)]
+
+        if propagate_Taylor is not None:
+            if verbose:
+                print("Using {}-th order Taylor expansion for propagation".format(propagate_Taylor))
+            self.plist_base += ["propagate_Taylor {}".format(propagate_Taylor)]  # massive speedup for systems with hilbert space dims larger than around 8
+        elif dim_prod is not None:
+            if np.prod(dim_prod) >= 8:
+                if verbose:
+                    print("Using 3rd order Taylor expansion for propagation, as system dimension is {}, which is >= 8".format(np.prod(dim_prod)))
+                self.plist_base += ["propagate_Taylor 3"]
 
         self.lindblad = lindblad
         if lindblad_ops is not None and lindblad:
@@ -297,7 +307,7 @@ class GeneralSystemACE:
                 _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, self.pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file, plist=self.plist_base.copy())
             # add to plist
             self.plist_base += ["add_PT {}".format(self.pt_file)]
-        
+
         if modes is None:
             print("No modes specified, assuming no interaction")
         self.modes = modes  # list of operators that can induce transitions and are mapped to light modes, eg |1><0|_2 could be mapped to x-polarized light in a TLS
@@ -344,6 +354,9 @@ class GeneralSystemACE:
             if isinstance(multitime_op, dict):
                 multitime_op = [multitime_op]
             for _mto in multitime_op:
+                # check if applyFrom is either "left", "right"
+                if _mto["applyFrom"] not in ["left", "right"]:
+                    raise UserWarning("applyFrom must be either 'left' or 'right', got: {}".format(_mto["applyFrom"]))
                 if isinstance(_mto['operator'], str):
                     run_plist += ["apply_Operator_{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
 

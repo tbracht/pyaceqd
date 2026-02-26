@@ -531,6 +531,12 @@ def extract_dms(dm, times, tau_c, t_MTOs):
             Dynamical maps for the time before and after the MTO, shape (n_tauc, n_h^2, n_h^2)
             where n_tauc is the number of time steps in the memory time tau_c. 
     """
+    # find the index of time zero
+    try:
+        i_zero = np.where(np.round(times,6) == 0.0)[0][0]
+    except IndexError:
+        print(f"Available times: {times}")
+        raise ValueError("Time array does not contain time zero.")
     # extract the dynamical map for the first tau_c
     # dt = times[1] - times[0]
     i_timelocal = np.where(times > times[0]+tau_c)[0][0]
@@ -553,7 +559,7 @@ def extract_dms(dm, times, tau_c, t_MTOs):
     # extract the dynamical map for the time before the MTO
     tl_dms = []
 
-    dm_1 = dm[:len_tauc]
+    dm_1 = dm[i_zero:len_tauc+i_zero]  # from time 0 to tau_c
     tl_dms.append(dm_1)
     # extract the dynamical map for the time after the MTO
     for i_tmto in i_tmtos:

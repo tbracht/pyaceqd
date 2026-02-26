@@ -155,14 +155,14 @@ PYBIND11_MODULE(ACE, m) {
     ;
 
   py::class_<ACE::Simulation_PT>(m, "Simulation")
-    .def(py::init<>(), py::call_guard<py::gil_scoped_release>())
-    .def(py::init<ACE::Parameters &>(), py::call_guard<py::gil_scoped_release>())
+    .def(py::init<>(), py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
+    .def(py::init<ACE::Parameters &>(), py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
 //    .def("run", static_cast<Eigen::MatrixXcd (ACE::Simulation_PT::*)(
 //      ACE::Propagator &prop, ACE::ProcessTensorForwardList &PT,
 //      const Eigen::MatrixXcd & initial, const ACE::TimeGrid &tgrid,
 //      ACE::OutputPrinter &printer)>(&ACE::Simulation_PT::run))
-    .def("run",&ACE::Simulation_PT::run_, py::call_guard<py::gil_scoped_release>())
-    .def("run",&ACE::Simulation_PT::run__, py::call_guard<py::gil_scoped_release>())
+    .def("run",&ACE::Simulation_PT::run_, py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
+    .def("run",&ACE::Simulation_PT::run__, py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
     .def(py::init([](ACE::FreePropagator &prop, 
                      ACE::ProcessTensorForwardList &PT,
                      const ACE::InitialState & initial, 
@@ -171,7 +171,7 @@ PYBIND11_MODULE(ACE, m) {
        ACE::Simulation_PT * sim= new ACE::Simulation_PT();
        sim->run(prop, PT, initial, tgrid, printer);
        return sim;
-    }), py::call_guard<py::gil_scoped_release>())
+    }), py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
     .def(py::init([](ACE::FreePropagator &prop, 
                      ACE::ProcessTensorForwardList &PT,
                      const Eigen::MatrixXcd & initial, 
@@ -180,7 +180,7 @@ PYBIND11_MODULE(ACE, m) {
        ACE::Simulation_PT * sim= new ACE::Simulation_PT();
        sim->run(prop, PT, initial, tgrid, printer);
        return sim;
-    }), py::call_guard<py::gil_scoped_release>())
+    }), py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
     ;
 
   py::class_<ACE::InfluenceFunctional>(m, "InfluenceFunctional_QUAPI")

@@ -245,7 +245,7 @@ class PolarizatzionEntanglement():
         op_4 = np.kron(np.eye(dim), op_to_matrix(op4_t))  # op_4 is applied from left at time t+tau
         # t > tmem part: start with rho_tmem
 
-        rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem
+        rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem, this directly propagates rho from 0 to tmem
         
         x_n2 = T_inv @ rho_tmem
         x_n1n2 = T_inv @ op_4 @ op_1 @ T

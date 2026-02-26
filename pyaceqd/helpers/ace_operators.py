@@ -1,6 +1,12 @@
 import re
 import numpy as np
 
+def id(dim):
+    """
+    returns the identity operator for a system with dimension dim as matrix
+    """
+    return np.eye(dim)
+
 def ketbra(i,j, dim):
     """
     returns the operator |i><j| for a system with dimension dim as matrix

@@ -6,12 +6,31 @@ from pyaceqd.timebin.timebin import TimeBin
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
 import os
-from pyaceqd.timebin import timebin_tl
 import time
 import pyaceqd.constants as constants
 from pyaceqd.helpers.timer import Runtimer
 import warnings
+
+try:
+    from pyaceqd.timebin import timebin_tl
+except ImportError as exc:
+    timebin_tl = None
+    _TIMEBIN_TL_IMPORT_ERROR = exc
+    warnings.warn(
+        "Optional Fortran module 'timebin_tl' not available. "
+        "Time-local accelerated routines will be unavailable.",
+        ImportWarning,
+        stacklevel=2,
+    )
 temp_dir = constants.temp_dir
+
+
+def _require_timebin_tl() -> None:
+    if timebin_tl is None:
+        raise RuntimeError(
+            "The optional Fortran module 'timebin_tl' is not available. "
+            "Reinstall with Fortran build enabled to use time-local accelerated routines."
+        ) from _TIMEBIN_TL_IMPORT_ERROR
 
 # exemplary options-dict:
 options_example = {"verbose": False, "delta_xd": 4, "gamma_e": 1/65, "lindblad": True,
@@ -579,12 +598,12 @@ class TwoPhotonTimebinNew(TimeBin):
 
         options_new["pulse_file_x"] = self.pulse_file_x1
         options_new["pulse_file_y"] = self.pulse_file_y1
-        with Runtimer(self.verbose, name="dynmaps.system1"):
+        with Runtimer(self.verbose, name="dynmaps system1"):
             result1, dm1 = self.system(0, self.gaussian_t + memory_time, calc_dynmap=True, **options_new)  # first time-bin
 
         options_new["pulse_file_x"] = self.pulse_file_x2
         options_new["pulse_file_y"] = self.pulse_file_y2
-        with Runtimer(self.verbose, name="dynmaps.system2"):
+        with Runtimer(self.verbose, name="dynmaps system2"):
             result2, dm2 = self.system(0, self.gaussian_t + memory_time, calc_dynmap=True, **options_new)  # second time-bin
 
         _t1 = np.round(np.real(result1[0]),6)  # avoid numerical noise by rounding
@@ -634,6 +653,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return t1, _G2_1, eell_1, _G2_1, _G2_1*0, G21_t1t2
     
     def eell_tl_f(self):
+        _require_timebin_tl()
         op_1 = op_to_matrix(self.sigma_bdag)  # right
         op_2 = op_to_matrix(self.sigma_xdag)  # right
         op_3 = op_to_matrix(self.sigma_b)  # left
@@ -677,6 +697,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return t1, _G2, eell, G12 #, rho_reshaped
     
     def eell_tl_8ops(self):
+        _require_timebin_tl()
         tl_map, dm_1, dm_2 = self._calc_dynmaps()
         rho_init = self.get_initial_state()
         t1 = np.round(self.t1,6)  # avoid numerical noise
@@ -711,6 +732,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return t1, _G2, eell, G12 #, rho_reshaped
     
     def eightops_fortran(self, rho0, operators, precalc_tls, dm_1, dm_2, early_only=False, late_t1_only=False):
+        _require_timebin_tl()
         dim = rho0.shape[0]
         t1 = np.round(self.t1,6)  # avoid numerical noise
         dt = np.round(self.dt,6)
@@ -742,6 +764,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return rho
     
     def propagate_tb_new(self, t_start, t_stop, rho, dm_tl, verbose=False):
+            _require_timebin_tl()
             t_start = np.round(t_start,6)  # avoid numerical noise
             t_stop = np.round(t_stop,6)
             n_start = int(np.round(t_start/self.dt))
@@ -797,6 +820,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return t, rho_t
     
     def test_apply_ops(self):
+        _require_timebin_tl()
         op1 = self.sigma_bdag
         op2 = self.sigma_xdag
         op3 = self.sigma_b
@@ -827,6 +851,7 @@ class TwoPhotonTimebinNew(TimeBin):
         print(rho2-rho_random)
 
     def dynamics_tl_t1(self):
+        _require_timebin_tl()
         tl_map, dm_tl1, dm_tl2 = self._calc_dynmaps()
         rho0 = self.get_initial_state()
         dim = rho0.shape[0]
@@ -850,6 +875,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return np.array(t), rho_t[:len(t)]
     
     def dynamics_tl_t1_t2(self, t1, t2, sigma_1, sigma_2, sigma_3, take_IDs=False):
+        _require_timebin_tl()
         sigma1_mat = op_to_matrix(sigma_1)
         sigma2_mat = op_to_matrix(sigma_2)
         sigma3_mat = op_to_matrix(sigma_3)
@@ -895,6 +921,7 @@ class TwoPhotonTimebinNew(TimeBin):
         return np.array(t), rho_t
 
     def dynamics_tl_t1_t2_f(self, _t1, _t2, sigma_1, sigma_2, sigma_3, take_IDs=False):
+        _require_timebin_tl()
         sigma1_mat = op_to_matrix(sigma_1)
         sigma2_mat = op_to_matrix(sigma_2)
         sigma3_mat = op_to_matrix(sigma_3)

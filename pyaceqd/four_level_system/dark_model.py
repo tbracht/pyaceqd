@@ -17,7 +17,7 @@ class BiexcitonSingleDark(GeneralSystemACE):
     Derives from GeneralSystemACE and mirrors the configuration used by darkmodel_new.
     """
     def __init__(self, dt=0.1, gamma_e=1/100, gamma_b=None, delta_xd=0, delta_b=4, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None,
-                 initial="|0><0|_5", lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir=""):
+                 initial="|0><0|_5", lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", gamma_d=None):
         system_prefix = "b_single_dark"
         # |0> = G, |1> = X, |2> = Y, |3> = D, |4> = B
         system_op = ["{}*|4><4|_5".format(-delta_b), "{}*|3><3|_5".format(-delta_xd)]
@@ -27,6 +27,8 @@ class BiexcitonSingleDark(GeneralSystemACE):
             if gamma_b is None:
                 gamma_b = gamma_e
             lindblad_ops = [["|0><1|_5", gamma_e], ["|0><2|_5", gamma_e], ["|1><4|_5", gamma_b], ["|2><4|_5", gamma_b]]
+            if gamma_d is not None:
+                lindblad_ops.append(["|0><3|_5", gamma_d])  # dark state decay
 
         threshold = "8"  # threshold for PT generation
         boson_e_max = 7  # maximum boson energy in meV
@@ -43,7 +45,7 @@ class BiexcitonSingleDark(GeneralSystemACE):
 
 
 def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4"):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", gamma_d=None):
     system_prefix = "darkmodel_"
     # |0> = G, |1> = X, |2> = D, |3> = B
     system_op = ["{}*|3><3|_4".format(-delta_b),"{}*|2><2|_4".format(-delta_xd)]
@@ -55,6 +57,8 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/
         if gamma_b is None:
             gamma_b = gamma_e  # the same rate for x and b, as we only consider one x-state
         lindblad_ops = [["|0><1|_4",gamma_e],["|1><3|_4",gamma_b]]  #  |2> is dark, does not decay 
+        if gamma_d is not None:
+            lindblad_ops.append(["|0><2|_4", gamma_d])  # dark state decay
     # we use 'y'-polar for coupling between G, X and B, while 'x'-polar couples X and D
     interaction_ops = [["|2><0|_4","x"],["|3><2|_4","x"],["|1><0|_4","y"],["|3><1|_4","y"]]
     
@@ -65,7 +69,7 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/
 
 def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
                multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, threshold=8, output_ops=["|0><0|_5","|1><1|_5","|2><2|_5","|3><3|_5","|4><4|_5"], initial="|0><0|_5", use_infinite=True,
-               calc_dynmap=False):
+               calc_dynmap=False, gamma_d=None):
     system_prefix = "darkmodel_new_"
     # |0> = G, |1> = X, |2> = Y, |3> = D, |4> = B
     system_op = ["{}*|4><4|_5".format(-delta_b),"{}*|3><3|_5".format(-delta_xd)]
@@ -76,6 +80,8 @@ def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_
         if gamma_b is None:
             gamma_b = gamma_e
         lindblad_ops = [["|0><1|_5",gamma_e],["|0><2|_5",gamma_e],["|1><4|_5",gamma_b],["|2><4|_5",gamma_b]]  #  |2> is dark, does not decay 
+        if gamma_d is not None:
+            lindblad_ops.append(["|0><3|_5", gamma_d])  # dark state decay
     # we use 'x'-polar for coupling between G, X and B, while 'y'-polar couples G, D and B
     # Y can only be accessed by radiative decay from B
     interaction_ops = [["|1><0|_5","x"],["|4><1|_5","x"],["|3><0|_5","y"],["|4><3|_5","y"]]
