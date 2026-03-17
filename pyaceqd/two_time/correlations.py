@@ -3,10 +3,9 @@ import matplotlib.pyplot as plt
 import tqdm
 from pyaceqd.pulses import ChirpedPulse, CWLaser
 from pyaceqd.tools import construct_t, simple_t_gaussian, calc_tl_dynmap_pseudo, use_tl_map, extract_dms, use_dm_block, tl_pad_stationary, op_to_matrix, tl_pad_stationary_nsteps
-from pyaceqd.two_level_system.tls import tls
 from concurrent.futures import ThreadPoolExecutor, wait
 from pyaceqd.constants import hbar
-from pyaceqd.general_system.general_system import generate_pulsefiles
+from pyaceqd.general_system.legacy.general_system import generate_pulsefiles
 from functools import reduce
 import cProfile
 import pstats

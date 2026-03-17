@@ -7,6 +7,12 @@ def id(dim):
     """
     return np.eye(dim)
 
+def zeros(dim):
+    """
+    returns the zero operator for a system with dimension dim as matrix
+    """
+    return np.zeros((dim,dim))
+
 def ketbra(i,j, dim):
     """
     returns the operator |i><j| for a system with dimension dim as matrix
@@ -37,6 +43,33 @@ def kron(*ops):
     for k in range(1,n):
         res = np.kron(res, ops[k])
     return res
+
+def b_op(dim):
+    """
+    returns the annihilation operator for a bosonic mode with dimension dim as matrix
+    """
+    op = np.zeros((dim,dim))
+    for i in range(1,dim):
+        op[i-1,i] = np.sqrt(i)
+    return op
+
+def bdag_op(dim):
+    """
+    returns the creation operator for a bosonic mode with dimension dim as matrix
+    """
+    op = np.zeros((dim,dim))
+    for i in range(1,dim):
+        op[i,i-1] = np.sqrt(i)
+    return op
+
+def n(dim):
+    """
+    returns the number operator for a bosonic mode with dimension dim as matrix
+    """
+    op = np.zeros((dim,dim))
+    for i in range(dim):
+        op[i,i] = i
+    return op
 
 def op_to_matrix(op):
     op_parts = op.split("+")
@@ -91,3 +124,25 @@ def _op_to_matrix(op):
         op_matrix = ket @ bra
         
         return op_matrix
+    
+def matrix_to_op(mat, precision=5):
+  threshold=10**(-precision)/10.*0.999
+  if mat.shape[0] != mat.shape[1]:
+    raise ValueError(f'mat.shape[0] != mat.shape[1]')   
+  d = mat.shape[0]
+  str = ''
+  for i in range(d):
+    for j in range(d):
+      if np.abs(mat[i,j])>threshold:
+        if str != '':
+          str += '+'
+        if mat[i,j].imag>threshold:
+          str += f'({mat[i,j].real:.{precision}f}+{mat[i,j].imag:.{precision}f}*i)'
+        elif mat[i,j].imag<-threshold:
+          str += f'({mat[i,j].real:.{precision}f}{mat[i,j].imag:.{precision}f}*i)'
+        else:
+          str += f'({mat[i,j].real:.{precision}f})'
+        str += f'*|{i}><{j}|_{d}'
+  if str == '':
+    str = f'0*|0><0|_{d}'
+  return str

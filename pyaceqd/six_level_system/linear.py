@@ -2,10 +2,10 @@ import subprocess
 import numpy as np
 import os
 from pyaceqd.tools import export_csv, output_ops_dm, compose_dm, read_calibration_file
-from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.legacy.general_system import system_ace_stream
 from pyaceqd.general_system.general_system_new import GeneralSystemACE
 from pyaceqd.helpers.ace_operators import ketbra
-from pyaceqd.general_system.general_dressed_states import dressed_states
+from pyaceqd.general_system.legacy.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
 
 temp_dir = constants.temp_dir

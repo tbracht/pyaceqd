@@ -4,7 +4,7 @@ from pyaceqd.tools import export_csv, construct_t, simple_t_gaussian
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
-from pyaceqd.two_level_system.tls import tls
+from pyaceqd.two_level_system.legacy_tls import tls
 from pyaceqd.pulses import ChirpedPulse
 
 import pyaceqd.constants as constants

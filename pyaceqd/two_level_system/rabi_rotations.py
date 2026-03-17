@@ -1,4 +1,4 @@
-from pyaceqd.two_level_system.tls import tls
+from pyaceqd.two_level_system.legacy_tls import tls
 import numpy as np
 import matplotlib.pyplot as plt
 from pyaceqd.pulses import ChirpedPulse

@@ -4,7 +4,7 @@ from pyaceqd.tools import export_csv, construct_t, simple_t_gaussian
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
-from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.legacy.general_system import system_ace_stream
 import pyaceqd.constants as constants
 
 hbar = constants.hbar  # meV*ps

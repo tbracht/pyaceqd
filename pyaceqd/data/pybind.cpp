@@ -11,14 +11,14 @@
 #include "ComplexFunction_Interpolate.hpp"
 #include "DynamicalMap.hpp"
 
-// Custom pybind file for ACE
-
 namespace py = pybind11;
 
 
 PYBIND11_MODULE(ACE, m) {
   m.doc() = "pybind11 ACE plugin"; // optional module docstring
   m.attr("hbar") = ACE::hbar_in_meV_ps;
+  m.def("StringToMatrix", [](const std::string &str){
+    return (Eigen::MatrixXcd)ACE::ReadExpression(str);});
 
   py::class_<ACE::Parameters>(m, "Parameters")
     .def(py::init<>(), py::call_guard<py::gil_scoped_release>())
@@ -60,6 +60,8 @@ PYBIND11_MODULE(ACE, m) {
       py::arg("time"), py::arg("Op"), py::arg("apply_before")=false, py::call_guard<py::gil_scoped_release>())
     .def("get_Htot",&ACE::FreePropagator::get_Htot, py::call_guard<py::gil_scoped_release>())
     .def("update",&ACE::FreePropagator::update, py::call_guard<py::gil_scoped_release>())
+    .def_readwrite("propagate_Taylor",&ACE::FreePropagator::propagate_Taylor, py::call_guard<py::gil_scoped_release>())
+    .def_readwrite("propagate_system_threshold",&ACE::FreePropagator::propagate_system_threshold, py::call_guard<py::gil_scoped_release>())
     .def_readwrite("const_H",&ACE::FreePropagator::const_H)
     .def_readwrite("M",&ACE::FreePropagator::M)
     ;
@@ -87,7 +89,11 @@ PYBIND11_MODULE(ACE, m) {
 
       return new ACE::ProcessTensorForwardList(param, mpgs_conv);}))
 //    .def(py::init<ACE::Parameters &>())
+
+    .def("add_PT",static_cast<void (ACE::ProcessTensorForwardList::*)(const std::string &, int, int)>(&ACE::ProcessTensorForwardList::add_PT), py::arg("filename"), py::arg("expand_dim_front")=0, py::arg("expand_dim_back")=0, py::call_guard<py::gil_scoped_release>())
     ;
+
+  
    
   py::class_<ACE::InitialState>(m, "InitialState")
     .def(py::init<>(), py::call_guard<py::gil_scoped_release>())
@@ -180,8 +186,7 @@ PYBIND11_MODULE(ACE, m) {
        ACE::Simulation_PT * sim= new ACE::Simulation_PT();
        sim->run(prop, PT, initial, tgrid, printer);
        return sim;
-    }), py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy)
-    ;
+    }), py::call_guard<py::gil_scoped_release>(), py::return_value_policy::copy);
 
   py::class_<ACE::InfluenceFunctional>(m, "InfluenceFunctional_QUAPI")
     .def(py::init<>())

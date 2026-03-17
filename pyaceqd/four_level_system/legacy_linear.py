@@ -1,6 +1,6 @@
-from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.legacy.general_system import system_ace_stream
 from pyaceqd.general_system.general_system_new import GeneralSystemACE
-from pyaceqd.general_system.general_dressed_states import dressed_states
+from pyaceqd.general_system.legacy.general_dressed_states import dressed_states
 import pyaceqd.constants as constants
 from pyaceqd.helpers.ace_operators import ketbra, kron
 import numpy as np

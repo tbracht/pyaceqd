@@ -1,9 +1,10 @@
 import numpy as np
 from pyaceqd.helpers.ace_operators import ketbra, kron
-from pyaceqd.general_system.general_system import system_ace_stream
+from pyaceqd.general_system.legacy.general_system import system_ace_stream
 from pyaceqd.general_system.general_system_new import system_ace, GeneralSystemACE
-from pyaceqd.general_system.general_dressed_states import dressed_states
-from pyaceqd.general_system.general_dressed_states_new import dressed_states_new
+from pyaceqd.general_system.legacy.general_dressed_states import dressed_states
+from pyaceqd.general_system.legacy.general_dressed_states_new import dressed_states_new
+from pyaceqd.helpers.ace_operators import ketbra
 import warnings
 import pyaceqd.constants as constants
 
@@ -114,10 +115,10 @@ def tls_new(t_start, t_end, *pulses, dt=0.1, gamma_e=1/100, phonons=False, ae=5.
          multitime_op=None, prepare_only=False, output_ops=["|0><0|_2","|1><1|_2","|0><1|_2","|1><0|_2"], phonon_factor=1.0, dressedstates=False, rf=False, rf_array=None, firstonly=False,\
              dephasing=None, J_to_file=None, J_file=None, factor_ah=None, threshold=8, calc_dynmap=False, rho0=None, e_x=0, get_M_t=None, initial="|0><0|_2", print_H=False, **options):
     system_prefix = "tls"
-    system_op = None
+    system_op = ["0*|1><1|_2"]
     if e_x != 0:
         system_op = ["({}*|1><1|_2)".format(e_x)]
-    boson_op = "{:.3f}*|1><1|_2".format(phonon_factor)
+    boson_op = phonon_factor * ketbra(1,1,2)  #"{:.3f}*|1><1|_2".format(phonon_factor)
     # initial = "|0><0|_2"
     lindblad_ops = []
     if lindblad:

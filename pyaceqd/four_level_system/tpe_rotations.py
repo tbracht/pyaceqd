@@ -1,4 +1,4 @@
-from pyaceqd.four_level_system.linear import biexciton
+from pyaceqd.four_level_system.legacy_linear import biexciton
 import numpy as np
 import matplotlib.pyplot as plt
 from pyaceqd.pulses import ChirpedPulse

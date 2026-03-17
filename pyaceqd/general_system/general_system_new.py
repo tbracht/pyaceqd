@@ -14,7 +14,7 @@ from pyaceqd.helpers.order_eigenstates import order_eigenstates
 hbar = constants.hbar  # meV*ps
 temp_dir = constants.temp_dir
 sys.path.append(constants.pybind_path)  # path to pybinds for ACE
-from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap
+from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap, StringToMatrix, MatrixToString
 
 def compose_dm(outputs, dim=2):
     """
@@ -50,25 +50,37 @@ def generate_rf(t, pulses, firstonly=False):
         new_pulses = [new_pulses[0]]
     return t, rf, new_pulses
 
-def _gen_pt_worker(_generate_file):
+def _gen_pt_worker(_generate_params, system_op=None):
     # this gets called in a separate process to generate the PT file
     # so we need to import ACEutils here as well
     from ACEutils import Parameters, FreePropagator, ProcessTensors, TimeGrid
-    param_w = Parameters(_generate_file)
+    param_w = Parameters(_generate_params)
     fprop_w = FreePropagator(param_w)
+    first = True
+    for _op in system_op:
+        if first:
+            fprop_w.set_Hamiltonian(_op)
+            first=False
+        else:
+            fprop_w.add_Hamiltonian(_op)
+        
     tgrid_w = TimeGrid(param_w)
     PT_w = ProcessTensors(param_w)
     _ = (param_w, fprop_w, tgrid_w, PT_w)
 
 def _get_pt_name(system_prefix, ae, temperature, threshold, dt, J_file):
+    ae = ae * 1.0  # ensure float
+    temperature = temperature * 1.0
     if J_file is not None:
         pt_file = "{}_{}_{}k_th{}_dt{}.ptr".format(system_prefix,os.path.splitext(J_file)[0],temperature,threshold,dt)
     else:
         pt_file = "{}_{}nm_{}k_th{}_dt{}.pt".format(system_prefix,ae,temperature,threshold,dt)
     return pt_file
 
-def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename, boson_e_max=7, verbose=False, J_file=None, J_to_file=False, plist=[]):
-    params = plist
+def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename, boson_e_max=7, system_op=None, verbose=False, J_file=None, J_to_file=False):
+    if system_op is None:
+        raise ValueError("system_op must be provided to calculate PT file, as the system Hamiltonian is needed for the calculation.")
+    params = []
     params += ["dt {}".format(dt)]
     params += ["te {}".format(20)]
     params += ["threshold 1e-{}".format(threshold)]
@@ -80,7 +92,8 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
     if J_file is not None:
         params += ["Boson_J_from_file {}".format(J_file)]
     else:
-        params += ["Boson_SysOp {{ {} }}".format(boson_op)]
+        boson_operator = StringToMatrix(boson_op) if isinstance(boson_op, str) else boson_op
+        params += ["Boson_SysOp {{ {} }}".format(MatrixToString(boson_operator))]
         params += ["Boson_J_type QDPhonon"]
         params += ["Boson_J_a_e {}".format(ae*1.0)]
         if factor_ah is not None:
@@ -95,7 +108,7 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
         for line in params:
             print(line)
     ctx = mp.get_context('fork')
-    proc = ctx.Process(target=_gen_pt_worker, args=(params,))
+    proc = ctx.Process(target=_gen_pt_worker, args=(params,system_op))
     proc.start()
     while not os.path.exists(filename+"_initial"):
         time.sleep(0.2)
@@ -145,7 +158,8 @@ def system_ace(t_start, t_end, *pulses, dt=0.01, phonons=False, ae=3.0, temperat
         # try to detect pt_file, else calculate it
         if not os.path.exists(pt_file+"_initial") or J_to_file is not None:
             print("{} not found. Calculating...".format(pt_file))
-            _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file)
+            _sysop = [StringToMatrix(op) for op in system_op] if system_op is not None else None
+            _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file, system_op=_sysop)
 
     plist = []
     plist += ["dt {}".format(dt)]
@@ -251,9 +265,9 @@ def system_ace(t_start, t_end, *pulses, dt=0.01, phonons=False, ae=3.0, temperat
 
 
 class GeneralSystemACE:
-    def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7, initial=None,
-                 system_op=["0*|1><1|_2"], boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
-                 colors=None, propagate_Taylor=None):
+    def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7,
+                 system_op=None, boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
+                 colors=None, propagate_Taylor=None, rho0=None):
         """
         ACE: separate calculation for the process tensor, which can be used to simulate long time scales with interaction to the environment.
         """
@@ -261,41 +275,22 @@ class GeneralSystemACE:
         self.plist_base = []  # parameters that will be used in each simulation
         if system_op is None:
             raise ValueError("system_op must be provided")
-        for _op in system_op:
-            self.plist_base += ["add_Hamiltonian {{ {} }}".format(_op)]
-        self.dt = dt
-        self.plist_base += ["dt {}".format(dt)]
 
         if propagate_Taylor is not None:
             if verbose:
                 print("Using {}-th order Taylor expansion for propagation".format(propagate_Taylor))
             self.plist_base += ["propagate_Taylor {}".format(propagate_Taylor)]  # massive speedup for systems with hilbert space dims larger than around 8
-        elif dim_prod is not None:
-            if np.prod(dim_prod) >= 8:
-                if verbose:
-                    print("Using 3rd order Taylor expansion for propagation, as system dimension is {}, which is >= 8".format(np.prod(dim_prod)))
-                self.plist_base += ["propagate_Taylor 3"]
-
+        
+        self.dt = dt
         self.lindblad = lindblad
-        if lindblad_ops is not None and lindblad:
-            for _op in lindblad_ops:
-                # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
-                self.plist_base += ["add_Lindblad {} {{ {} }}".format(_op[1],_op[0])]
+        self.system_op = system_op
+        self.lindblad_ops = lindblad_ops
 
         self.phonons = phonons
         if self.phonons:
             # parameters for process tensor calculation
-            self.ae = ae * 1.0  # ensure float
-            self.temperature = temperature * 1.0
             if boson_op is None:
                 raise ValueError("boson_op must be provided when phonons=True")
-            self.boson_op = boson_op
-            self.boson_e_max = boson_e_max
-            self.threshold = threshold
-            self.system_prefix = system_prefix  # for pt name
-            self.J_to_file = J_to_file
-            self.J_file = J_file
-            self.factor_ah = factor_ah
             self.pt_file = pt_file
             if self.pt_file is None:
                 self.pt_file = _get_pt_name(pt_dir+system_prefix, ae, temperature, threshold, dt, J_file)
@@ -303,50 +298,36 @@ class GeneralSystemACE:
                 print("using pt_file " + self.pt_file)
             # try to detect pt_file, else calculate it
             if not os.path.exists(self.pt_file+"_initial") or J_to_file is not None:
+                print("system:", self.system_op)
                 print("{} not found. Calculating...".format(self.pt_file))
-                _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, self.pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file, plist=self.plist_base.copy())
-            # add to plist
-            self.plist_base += ["add_PT {}".format(self.pt_file)]
+                _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op,
+                            self.pt_file, boson_e_max=boson_e_max, verbose=verbose,
+                            system_op=self.system_op, J_file=J_file, J_to_file=J_to_file)
 
         if modes is None:
-            print("No modes specified, assuming no interaction")
+            raise UserWarning("No modes specified, assuming no interaction")
         self.modes = modes  # list of operators that can induce transitions and are mapped to light modes, eg |1><0|_2 could be mapped to x-polarized light in a TLS
-        # determine dimension
-        param_base = Parameters(self.plist_base)
-        base_fprop = FreePropagator(param_base)
-        self.dim = base_fprop.get_dim()
-        self.dim_prod = dim_prod  # can optionally be provided if system is product of smaller subsystems: for ex., if two TLS, dim_prod=[2,2], dim = np.prod(dim_prod)=4
+
+        self.dim_prod = dim_prod  # provides dimension of system, eg. for TLS coupled to two 3LS it would be [2,3,3], so total dim is 2*3*3 = 18
         if self.dim_prod is None:
-            self.dim_prod = [self.dim]
+            raise UserWarning("No dim_prod provided, which is beneficial if you want dressed state analysis. It is recommended to provide dim_prod as a list of dimensions of subsystems, ex: [2,3,3] for TLS coupled to two 3LS.")
+        self.dim = np.shape(system_op[0])[0]  # dimension of the system, inferred from the first system operator. assumes all system operators have the same dimension.
         if self.verbose:
             print("System dimension: {}".format(self.dim))
-        # # shared Process Tensor object
-        # if self.phonons:
-        #     self.PT = ProcessTensors(param_base)
-        # else:
-        #     self.PT = ProcessTensors()  # empty PT
-        # self.PT = ProcessTensors(param_base)
-        # self.lindblad_ops = lindblad_ops
-        self.rf_op = rf_op
-        self.initial = initial
-        self.colors = colors  # optional colors for plotting
 
-    def run(self, t_start, t_end, *pulses, multitime_op=None, initial=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
+        self.rf_op = rf_op
+        self.colors = colors  # optional colors for plotting
+        self.rho0 = rho0  # initial density matrix as numpy array
+
+    def run(self, t_start, t_end, *pulses, multitime_op=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
             return_H=False, rf=False, rf_array=None, get_M_t=None):
         """
         runs a simulation with the given parameters and the base parameters defined in the class init.
         rho0: initial density matrix as numpy array, overrides 'initial' parameter.
         """
         run_plist = self.plist_base.copy()
-        run_plist += ["ta {}".format(t_start)]
-        run_plist += ["te {}".format(t_end)]
         run_plist += ["use_symmetric_Trotter true"]
-
-        # initial state
-        if initial is None:
-            initial = self.initial
-        if initial is not None:
-            run_plist += ["initial {{ {} }}".format(initial)]
+        run_plist += ["outfile /dev/null"]  # supress creation of "ACE.out" file
 
         # multitime operators, left or right
         if multitime_op is not None:
@@ -358,7 +339,10 @@ class GeneralSystemACE:
                 if _mto["applyFrom"] not in ["left", "right"]:
                     raise UserWarning("applyFrom must be either 'left' or 'right', got: {}".format(_mto["applyFrom"]))
                 if isinstance(_mto['operator'], str):
-                    run_plist += ["apply_Operator_{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
+                    _mto['operator'] = StringToMatrix(_mto['operator'])
+                    if self.verbose:
+                        print("Converted multitime operator from string to matrix: {}".format(_mto['operator']))
+                    # run_plist += ["apply_Operator_{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
 
         # output
         # check if output_ops are strings, empty or arrays
@@ -382,13 +366,28 @@ class GeneralSystemACE:
         
         param = Parameters(run_plist)
         # initial state
+        if rho0 is None and self.rho0 is not None:
+            rho0 = self.rho0
         if rho0 is not None:
             initial_state = InitialState(rho0)
         else:
-            initial_state = InitialState(param)
+            raise ValueError("No initial state provided, and no default initial state set in class. Provide an initial state as a numpy array using the rho0 parameter.")
         
         fprop = FreePropagator(param)
-        tgrid = TimeGrid(param)
+        fprop.set_dim(self.dim)
+        first = True
+        for _op in self.system_op:
+            if first:
+                fprop.set_Hamiltonian(_op)
+                first = False
+            else:
+                fprop.add_Hamiltonian(_op)
+        if self.lindblad_ops is not None and self.lindblad:
+            for _op in self.lindblad_ops:
+                # assume lindblad_ops contains tuples of (operator, rate), ex:(ketbra(0,1,2),1/100)
+                fprop.add_Lindblad(_op[1], _op[0])
+                # fprop.add_Lindblad(1/100, ketbra(0,1,2))
+        tgrid = TimeGrid(t_start, t_end, self.dt)
         t = np.round(np.array(tgrid.get_all()), decimals=10)
 
         # multitime operators that were not given as strings
@@ -467,11 +466,13 @@ class GeneralSystemACE:
                 H_total[i] = fprop.get_Htot(ti)
             return t, H_total       
         
-        sim = Simulation(param)
-        PT = ProcessTensors(param)
+        sim = Simulation()
+        PT = ProcessTensors()
+        if self.phonons:
+            PT.add_PT(self.pt_file)
         # calculate dynamical maps
         if calc_dynmap:
-            if get_M_t is not None:
+            if get_M_t is not None:  # option to return Propagator at specific time.
                 fprop.update(get_M_t,self.dt)
                 return fprop.M
             dynmap = DynamicalMap(fprop, PT, sim, tgrid)
@@ -489,7 +490,7 @@ class GeneralSystemACE:
         #reshaped = np.vstack([result[0][np.newaxis, :].real, result[1].T])
         return result[0].real, result[1].T
     
-    def dressed_states(self, t_start, t_end, *pulses, initial=None, rho0=None, rf=True, rf_array=None, firstonly=False, no_pulse=False, colors=None,
+    def dressed_states(self, t_start, t_end, *pulses, rho0=None, rf=True, rf_array=None, firstonly=False, no_pulse=False, colors=None,
                        visible_states=None, print_states_t=None, plot=True, t_lim=None, filename="dressed", e_lim=None, return_eigenvectors=False, fix_order=True):
         """
         calculates dressed states using the density matrix from run()
@@ -500,12 +501,12 @@ class GeneralSystemACE:
                   all pulses are still used for the density matrix calculation.
         rf_array: use this rf_array instead of generating it from the pulses.
         """
-        t, rho = compose_dm(self.run(t_start, t_end, *pulses, initial=initial, rho0=rho0, rf=rf, rf_array=rf_array), dim=self.dim)
+        t, rho = compose_dm(self.run(t_start, t_end, *pulses, rho0=rho0, rf=rf, rf_array=rf_array), dim=self.dim)
         if firstonly:
             pulses = [pulses[0]]
         if no_pulse:
             pulses = []
-        t, H_total = self.run(t_start, t_end, *pulses, initial=initial, rho0=rho0, return_H=True, rf=rf, rf_array=rf_array)
+        t, H_total = self.run(t_start, t_end, *pulses, rho0=rho0, return_H=True, rf=rf, rf_array=rf_array)
         if self.colors is None:
             self.colors = select_equally_spaced_colors(n=self.dim)
 
