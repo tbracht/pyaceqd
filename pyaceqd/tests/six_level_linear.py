@@ -1,7 +1,8 @@
 import numpy as np
 from pyaceqd.pulses import ChirpedPulse
 import matplotlib.pyplot as plt
-from pyaceqd.six_level_system.linear import energies_linear,sixls_linear,sixls_linear_dressed_states, SixLevelLinearSystem
+from pyaceqd.six_level_system.legacy.linear import energies_linear,sixls_linear,sixls_linear_dressed_states
+from pyaceqd.six_level_system.linear import SixLevelLinearSystem
 from pyaceqd.helpers.ace_operators import ketbra
 
 E_X, E_Y, E_S, E_F, E_B = energies_linear(delta_B=4.0, d0=0.25, d1=0.2, d2=0.05)

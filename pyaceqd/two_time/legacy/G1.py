@@ -4,7 +4,7 @@ from pyaceqd.tools import export_csv, construct_t, simple_t_gaussian
 import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait
-from pyaceqd.two_level_system.legacy_tls import tls
+from pyaceqd.two_level_system.legacy.legacy_tls import tls
 from pyaceqd.pulses import ChirpedPulse
 
 import pyaceqd.constants as constants
@@ -107,7 +107,7 @@ def pulsed_mollow_tls_pulses(pulse, areas, tend=500, tauend=500, dt=0.2, dtau=0.
             # do fft for every t, along the tau axis
             spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
         # integrate along the t axis
-        spectrums[i] = np.real(np.trapz(spectra.transpose(), t_axis))
+        spectrums[i] = np.real(np.trapezoid(spectra.transpose(), t_axis))
         # save in each loop, so progress is saved if the calculation is interrupted
         if save_dir is not None:
             _name = "_tau{:.2f}_lifet{:.1f}_det{:.1f}.npy".format(pulse_tau,1/gamma_e,detuning)
@@ -149,8 +149,8 @@ def pulsed_mollow_tls(pulse_tau, areas, detuning=0, tend=500, tauend=500, dt=0.2
             spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
         # total = np.zeros_like(spectra[0],dtype=float)
         # integrate along the t axis
-        # total += np.real(np.trapz(spectra.transpose(), t_axis))
-        spectrums[i] = np.real(np.trapz(spectra.transpose(), t_axis))
+        # total += np.real(np.trapezoid(spectra.transpose(), t_axis))
+        spectrums[i] = np.real(np.trapezoid(spectra.transpose(), t_axis))
         # save in each loop, so progress is saved if the calculation is interrupted
         if save_dir is not None:
             _name = "_tau{:.2f}_lifet{:.1f}_det{:.1f}.npy".format(pulse_tau,1/gamma_e,detuning)
@@ -176,7 +176,7 @@ def pulsed_mollow_energy(pulse_tau, detunings, area=3, tend=500, tauend=500, dt=
             # do fft for every t, along the tau axis
             spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
         # integrate along the t axis
-        spectrums[i] = np.real(np.trapz(spectra.transpose(), t_axis))
+        spectrums[i] = np.real(np.trapezoid(spectra.transpose(), t_axis))
         # save in each loop, so progress is saved if the calculation is interrupted
         if save_dir is not None:
             _name = "_tau{:.2f}_lifet{:.1f}_area{:.1f}.npy".format(pulse_tau,1/gamma_e,area)
@@ -191,9 +191,9 @@ def simple_vhom(tend=600, tauend=600, dt=0.1, dtau=0.02, *pulses, ae=3.0, temper
     options = {"gamma_e": gamma_e, "phonons": phonons, "ae": ae, "temperature": temperature, "lindblad": True, "pt_file": pt_file, "temp_dir": temp_dir,
                "stream": True, "output_ops": output_ops}
     t,x = tls(0,tend,*pulses,dt=dtau,**options)
-    brightness = np.trapz(x,t)  # not 'normalized' with gamma_e
+    brightness = np.trapezoid(x,t)  # not 'normalized' with gamma_e
     t, tau, g1_t_tau = G1_twols(0,tend,0,tauend,dt,dtau,*pulses,ae=ae,temperature=temperature,gamma_e=gamma_e,
                           phonons=phonons,pt_file=pt_file,workers=workers,temp_dir=temp_dir,coarse_t=coarse_t,prepare_only=prepare_only) 
-    g1_tau = np.trapz(np.abs(g1_t_tau)**2,t)
-    g1 = 2 * np.trapz(g1_tau,tau) / brightness
+    g1_tau = np.trapezoid(np.abs(g1_t_tau)**2,t)
+    g1 = 2 * np.trapezoid(g1_tau,tau) / brightness
     return g1

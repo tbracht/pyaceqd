@@ -1207,13 +1207,13 @@ def tl_threeoptwotime_phonons_dm(system, t_axis, *pulses, t_mem=10, opA="|1><0|_
 # plt.clf()
 
 
-# print(np.trapz(np.trapz(G2, t1, axis=0), t2))
+# print(np.trapezoid(np.trapezoid(G2, t1, axis=0), t2))
 
 # t,tau,G2_2 = tl_three_op_two_time(tls, t_axis, p1, t_mem=10, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=50, dt=0.1, options={"gamma_e": 2/100,"lindblad": True, "phonons": False, "use_infinite": True, "ae": 5.0}, debug=False, use_dm=True, fortran_only=False)
 
 # t1,t2,G2_2 = three_op_two_time(tls, t_axis, p1, opA="|1><0|_2", opB="|1><1|_2", opC="|0><1|_2", tau_max=t_tau_max, dt=0.05, options={"gamma_e": 2/100,"lindblad": True, "phonons": True, "use_infinite": True, "ae": 5.0}, debug=True)
 
-# print(np.trapz(np.trapz(G2_2, t1, axis=0), t2))
+# print(np.trapezoid(np.trapezoid(G2_2, t1, axis=0), t2))
 # plt.clf()
 # plt.pcolormesh(t1,t2,np.abs(G2_2).T,shading="gouraud")
 # plt.colorbar()

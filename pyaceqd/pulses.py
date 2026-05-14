@@ -5,7 +5,8 @@ import pyaceqd.constants as constants
 hbar = constants.hbar  # meV*ps
 
 class Pulse:
-    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, polar_x=1, polars=None, polarization=None, interaction_op=None, repeat_tb=None):
+    def __init__(self, tau, e_start, w_gain=0, t0=0, e0=1, phase=0, polar_x=1, polars=None, polarization=None, interaction_op=None, repeat_tb=None,
+                 phase_option="same"):
         self.tau = tau  # in ps
         self.e_start = e_start  # in meV
         # self.w_start = e_start / hbar  # in 1 / ps
@@ -20,6 +21,11 @@ class Pulse:
         self.polar_x = polar_x
         self.polar_y = np.sqrt(1-polar_x**2)
         self.repeat_tb = repeat_tb  # if not None, the pulse is repeated every repeat_tb ps
+        self.phase_option = phase_option  # for repeated pulses
+        if phase_option not in ["same", "random", "continuous"]:
+            raise ValueError("phase option must be 'same', 'random' or 'continuous'")
+        if self.w_gain != 0 and phase_option == "continuous":
+            raise ValueError("Continuous phase is not supported for non-zero chirp/gain.")
         if polars is not None:
             norm = np.sqrt(np.abs(polars[0])**2 + np.abs(polars[1])**2)
             self.polar_x = polars[0]/norm
@@ -85,7 +91,28 @@ class Pulse:
     def get_total(self, t):
         if self.repeat_tb is not None:
             t_mod = np.mod(t, self.repeat_tb)
-            return self.get_envelope(t_mod) * np.exp(-1j * self.get_full_phase(t_mod))
+            if self.phase_option == "continuous":
+                # if continuous phase, calc phase from unmodulated time.
+                phase = self.get_full_phase(t)
+            elif self.phase_option == "same":
+                # if same, calc from time modulo repeat_tb, i.e., the same for each pulse 
+                phase = self.get_full_phase(t_mod)
+            elif self.phase_option == "random":
+                # else, calculate separately for each "timebin"
+                phase_parts = []
+                dt = np.abs(t[1] - t[0])
+                steps_repeat = int(self.repeat_tb / dt)
+                n_parts = int(np.ceil(len(t) / steps_repeat))
+                random_phase = 0
+                for i in range(n_parts):
+                    steps_remaining = len(t) - i*steps_repeat
+                    steps_this_part = min(steps_repeat, steps_remaining)
+                    phase_parts.append(self.get_full_phase(t[0:steps_this_part]) + random_phase)
+                    random_phase = np.random.uniform(0, 2*np.pi)  # new random phase for next part, not for i = 0, but for i = 1 and onwards
+                phase = np.concatenate(phase_parts)
+            else:
+                raise ValueError("Invalid phase option")
+            return self.get_envelope(t_mod) * np.exp(-1j * phase)
         return self.get_envelope(t) * np.exp(-1j * self.get_full_phase(t))
     
     def get_total_dict(self, t):
@@ -107,6 +134,7 @@ class Pulse:
             polarization=self.polarization,
             interaction_op=self.interaction_op,
             repeat_tb=self.repeat_tb,
+            phase_option=self.phase_option
         )
 
 class AsymmetricPulse(Pulse):
@@ -130,6 +158,8 @@ class ChirpedPulse(Pulse):
     def __init__(self, tau_0, e_start, alpha=0, t0=0, e0=1*np.pi, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None, **pulse_kwargs):
         self.tau_0 = tau_0
         self.alpha = alpha
+        if self.alpha != 0 and pulse_kwargs.get("continuous_phase", False):
+            raise ValueError("Continuous phase is not supported for non-zero chirp.")
         super().__init__(tau=np.sqrt(alpha**2 / tau_0**2 + tau_0**2), e_start=e_start, w_gain=alpha/(alpha**2 + tau_0**4), t0=t0, e0=e0, polar_x=polar_x, phase=phase, polars=polars, polarization=polarization,
                          interaction_op=interaction_op, **pulse_kwargs)
     
@@ -235,3 +265,23 @@ class SmoothRectangle(Pulse):
     def copy(self):
         return SmoothRectangle(self.tau, self.e_start, self.w_gain, alpha_onoff=self.alpha_onoff, polars=None, **self._base_kwargs())
     
+class SmoothRectangleGaussian(Pulse):
+    """
+    Rectangular pulse that is switched on/off with a half-Gaussian shape.
+    It is possible to have different widths for the switch-on and switch-off process.
+    """
+
+    def __init__(self, tau_constant, e_start, t0=0, e0=1, phase=0, sigma_on=2, sigma_off=None, polarization=None, interaction_op=None, **pulse_kwargs):
+        self.sigma_on = sigma_on
+        self.sigma_off = sigma_off if sigma_off is not None else sigma_on
+        super().__init__(tau_constant, e_start, t0=t0, e0=e0, phase=phase, polarization=polarization, interaction_op=interaction_op, **pulse_kwargs)
+
+    def get_envelope(self, t):
+        tau_constant = self.tau
+        t_on = self.t0 - tau_constant/2
+        t_off = self.t0 + tau_constant/2
+        env_on = self.e0 * np.exp(-0.5 * ((t - t_on) / self.sigma_on) ** 2)
+        env_off = self.e0 * np.exp(-0.5 * ((t - t_off) / self.sigma_off) ** 2)
+        env_middle = self.e0 * np.ones_like(t)
+        env = np.where(t < t_on, env_on, np.where(t > t_off, env_off, env_middle))
+        return env

@@ -56,7 +56,7 @@ def G1_ee(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir=temp_dir, t
     t,g,x,d = darkmodel(t0,tb,*pulses,dt=dt,delta_xd=delta_xd,gamma_e=gamma_e,lindblad=True,temp_dir=temp_dir,phonons=phonons, pt_file=pt_file,prepare_only=prepare_only)
     x = np.real(x)
     t = np.real(t)
-    rho_ee = np.trapz(x,t)
+    rho_ee = np.trapezoid(x,t)
     if normalize:
         return rho_ee/gamma_e
     return rho_ee
@@ -68,7 +68,7 @@ def G1_ll(*pulses, t0=0, dt=0.05, delta_xd=4, gamma_e=1/65, temp_dir=temp_dir, t
     n_t = int(tb/dt)
     relevant_x = x[-n_t:]
     relevant_t = t[-n_t:]
-    rho_ee = np.trapz(relevant_x,relevant_t)
+    rho_ee = np.trapezoid(relevant_x,relevant_t)
     if normalize:
         return rho_ee/gamma_e
     return rho_ee

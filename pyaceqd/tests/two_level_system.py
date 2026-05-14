@@ -2,7 +2,7 @@ import numpy as np
 from pyaceqd.pulses import ChirpedPulse, PulseTrain
 import matplotlib.pyplot as plt
 from pyaceqd.two_level_system.tls import tls, tls_dressed_states
-from pyaceqd.two_time.G1 import G1_twols
+from pyaceqd.two_time.legacy.G1 import G1_twols
 # from photonprops.two_level_system.tls import twolevel_system
 from pyaceqd.constants import hbar
 import cProfile
@@ -67,7 +67,7 @@ plt.savefig("tls.png")
 # p1 = ChirpedPulse(tau_0=1, e_start=0, alpha=0, e0=1, t0=1*4)
 # pt = PulseTrain(150,4,p1,start=0)
 # t,g,x,p = tls_ace(0,600,pt,dt=dt,ae=5.0,verbose=False,phonons=False,gamma_e=1/100, lindblad=True)
-# brightness = np.trapz(x,t)
+# brightness = np.trapezoid(x,t)
 # x2,p2,t2 = twolevel_system(tau1=2.4, area1=2.7*np.pi, alpha1=0, det1=0, tau2=1,alpha2=0, area2=0*np.pi, det2=0, gamma_e=1/250, delay=0, mode="pop", tend=tend)
 
 # print(len(t))
@@ -100,7 +100,7 @@ p1 = ChirpedPulse(tau_0=2, e_start=0, alpha=0, e0=3, polar_x=1.0, t0=2*4)
 # tend = 20
 # t_axis, tau_axis, g1 = G1_twols(0,tend,0,tend,0.1,0.02,p1,simple_exp=False,phonons=False,workers=15,pt_file="tls_3.0nm_4k_th10_tmem20.48_dt0.02.ptr", gamma_e=1/100, coarse_t=True)
 # plt.pcolormesh(t_axis,tau_axis,np.abs(g1.transpose()),shading='auto')
-# print(np.trapz(np.trapz(g1.transpose(),t_axis),tau_axis))
+# print(np.trapezoid(np.trapezoid(g1.transpose(),t_axis),tau_axis))
 # plt.xlabel("t in ps")
 # plt.ylabel("tau in ps")
 # plt.colorbar()
@@ -123,8 +123,8 @@ p1 = ChirpedPulse(tau_0=2, e_start=0, alpha=0, e0=3, polar_x=1.0, t0=2*4)
 # plt.ylabel("tau in ps")
 # plt.colorbar()
 # plt.savefig("g2_tls_2.png")
-# G2_tau = np.abs(np.trapz(f.transpose(), t_axis))
-# g2 = 2 * np.trapz(G2_tau, tau_axis) / brightness**2
+# G2_tau = np.abs(np.trapezoid(f.transpose(), t_axis))
+# g2 = 2 * np.trapezoid(G2_tau, tau_axis) / brightness**2
 # print(1/100*brightness)
 # print(g2)
 #stats = pstats.Stats(pr)
@@ -136,7 +136,7 @@ p1 = ChirpedPulse(tau_0=2, e_start=0, alpha=0, e0=3, polar_x=1.0, t0=2*4)
 # f3 = G2(0,20,0,20,0.05,p1, thread=True,gamma_e=1/250)
 # np.save("g2_dt005.npy",f3)
 # gamma_e=1/250
-# # brightness = np.trapz(x,t)
+# # brightness = np.trapezoid(x,t)
 # # print(gamma_e*brightness)
 # f = np.load("g2_dt01.npy")
 # f2 = np.load("g2_dt001.npy")

@@ -1,6 +1,6 @@
 import numpy as np
 from pyaceqd.helpers.ace_operators import ketbra, kron, id
-from pyaceqd.general_system.general_system_new import GeneralSystemACE
+from pyaceqd.general_system.general_system import GeneralSystemACE
 
 import pyaceqd.constants as constants
 
@@ -20,7 +20,7 @@ class TLS(GeneralSystemACE):
         system_op = [x*e_x]  # system hamiltonian operator. default uses rotating frame where E_X = 0
         boson_op = x  # operator that couples to phonons
         lindblad_ops = [[p_gx, gamma_e]]  # decay of excited state to ground state
-        modes = {"x": p_gx.T}  # operator |1><0|_2 couples to x-polarized light
+        modes = {"x": p_gx.T, "energy": x}  # operator |1><0|_2 couples to x-polarized light, and operator |1><1|_2 for time-dependent energy fluctuations
         rf_op = x  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
         colors = ["#0000FF", "#FF0000"]
         super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
@@ -40,7 +40,7 @@ class TLSOneSensor(GeneralSystemACE):
         threshold = "8"  # threshold for PT generation
         boson_e_max = 7  # maximum boson energy in meV
         boson_op = kron(x,id(2))  # operator that couples to phonons
-        modes = {"x": kron(p_gx.T, id(2))}  # operator |1><0|_2 otimes Id_2 couples to x-polarized light
+        modes = {"x": kron(p_gx.T, id(2)), "energy": kron(x, id(2))}  # operator |1><0|_2 otimes Id_2 couples to x-polarized light
         rf_op = kron(x, id(2))  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
         dim_prod=[2,2]  # TLS + sensor dimensions
         colors = ["#0000FF", "#FF0000", "#00FF00", "#FF00FF"]  # just some example colors

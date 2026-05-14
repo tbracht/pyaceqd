@@ -1,4 +1,4 @@
-from pyaceqd.general_system.general_system_new import GeneralSystemACE
+from pyaceqd.general_system.general_system import GeneralSystemACE
 import pyaceqd.constants as constants
 from pyaceqd.helpers.ace_operators import ketbra, kron, id, b_op, bdag_op, n, zeros
 from pyaceqd.helpers.reduce_dimension import get_remove_indices, remove_dim_numbers, get_union_indices, filter_n_excitations
@@ -311,17 +311,19 @@ class BiexcitonFourSensors(GeneralSystemACE):
 class BiexcitonPhotonsSensor(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, n_phot1=2, n_phot2=2, gamma_b=None, delta_xy=0, delta_b=4, shift_x=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None,
              rho0=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", propagate_Taylor=None, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, remove_states=None,
-             max_excitations=None, sensor_detunings=[0,0], sensor_linewidths=[0.01,0.01], epsilon=1e-3):
+             max_excitations=None, sensor_detunings=[0,0], sensor_linewidths=[0.01,0.01], epsilon=1e-3, n_sensor_2=2):
         n1 = n_phot1 + 1
         n2 = n_phot2 + 1
         states_to_remove = []
+        if n_sensor_2 > 2:
+            print("Sensor 2 more than 2 levels, this is not standard for sensor systems.")
 
         if max_excitations is not None:
             # sensors dont contribute to excitation number
             n_system = x + y + 2*b  # operator that counts the number of excitations in the system
             n_photons1 = n(n1)  # operator that counts the number of photons in cavity 1
             n_photons2 = n(n2)  # operator that counts the number of photons in cavity 2
-            total_excitations = kron(n_system,id(n1),id(n1),id(2),id(2)) + kron(id(4),n_photons1,id(n2),id(2),id(2)) + kron(id(4),id(n1),n_photons2,id(2),id(2))  # total number of excitations in the system
+            total_excitations = kron(n_system,id(n1),id(n1),id(2),id(n_sensor_2)) + kron(id(4),n_photons1,id(n2),id(2),id(n_sensor_2)) + kron(id(4),id(n1),n_photons2,id(2),id(n_sensor_2))  # total number of excitations in the system
             _remove = filter_n_excitations(total_excitations, max_excitations)
             states_to_remove = get_union_indices(states_to_remove, _remove)  # get indices of states to remove based on max_excitations
         
@@ -338,50 +340,53 @@ class BiexcitonPhotonsSensor(GeneralSystemACE):
         
         system_prefix = f"b_linear_cavity_{n1}_{n2}{hash_states}"
         if rho0 is None:
-            rho0 = kron(g,ketbra(0,0,n1),ketbra(0,0,n2),ketbra(0,0,2),ketbra(0,0,2))
+            rho0 = kron(g,ketbra(0,0,n1),ketbra(0,0,n2),ketbra(0,0,2),ketbra(0,0,n_sensor_2))
         
         # |0> = G, |1> = X, |2> = Y, |3> = B
-        system_op = [-delta_b*kron(b,id(n1),id(n2),id(2),id(2)),
-                     -0.5*delta_xy*kron(x,id(n1),id(n2),id(2),id(2)),
-                     0.5*delta_xy*kron(y,id(n1),id(n2),id(2),id(2))]
+        system_op = [-delta_b*kron(b,id(n1),id(n2),id(2),id(n_sensor_2)),
+                     -0.5*delta_xy*kron(x,id(n1),id(n2),id(2),id(n_sensor_2)),
+                     0.5*delta_xy*kron(y,id(n1),id(n2),id(2),id(n_sensor_2))]
         if not shift_x:  # if not shifting X, then shift Y by full delta_xy instead of symmetrically
-            system_op = [-delta_b*kron(b,id(n1),id(n2),id(2),id(2)),
-                     delta_xy*kron(y,id(n1),id(n2),id(2),id(2))]
-        system_op.append(sensor_detunings[0]*kron(i4,id(n1),id(n2),s,i2))  # sensor Hamiltonian
-        system_op.append(sensor_detunings[1]*kron(i4,id(n1),id(n2),i2,s))
+            system_op = [-delta_b*kron(b,id(n1),id(n2),id(2),id(n_sensor_2)),
+                     delta_xy*kron(y,id(n1),id(n2),id(2),id(n_sensor_2))]
+        system_op.append(sensor_detunings[0]*kron(i4,id(n1),id(n2),s,id(n_sensor_2)))  # sensor Hamiltonian
+        if n_sensor_2 == 2:
+            system_op.append(sensor_detunings[1]*kron(i4,id(n1),id(n2),i2,s))
         # sensor coupling: sensor 1 and 2 to cavity 1 (X-pol cavity)
-        system_op.append(epsilon * (kron(i4,b_op(n1),id(n2),p_s.T,id(2)) + kron(i4,bdag_op(n1),id(n2),p_s,id(2))))  # sensor-cavity coupling
-        system_op.append(epsilon * (kron(i4,b_op(n1),id(n2),id(2),p_s.T) + kron(i4,bdag_op(n1),id(n2),id(2),p_s)))  # sensor-cavity coupling
+        system_op.append(epsilon * (kron(i4,b_op(n1),id(n2),p_s.T,id(n_sensor_2)) + kron(i4,bdag_op(n1),id(n2),p_s,id(n_sensor_2))))  # sensor-cavity coupling
+        if n_sensor_2 == 2:
+            system_op.append(epsilon * (kron(i4,b_op(n1),id(n2),id(2),p_s.T) + kron(i4,bdag_op(n1),id(n2),id(2),p_s)))  # sensor-cavity coupling
         lindblad_ops = []
         # QD decay outside of the cavity
         if lindblad:
             if gamma_b is None:
                 gamma_b = gamma_e
-            lindblad_ops = [[kron(p_gx,id(n1),id(n2),id(2),id(2)), gamma_e],
-                            [kron(p_gy,id(n1),id(n2),id(2),id(2)), gamma_e],
-                            [kron(p_xb,id(n1),id(n2),id(2),id(2)), gamma_b],
-                            [kron(p_yb,id(n1),id(n2),id(2),id(2)), gamma_b]]
+            lindblad_ops = [[kron(p_gx,id(n1),id(n2),id(2),id(n_sensor_2)), gamma_e],
+                            [kron(p_gy,id(n1),id(n2),id(2),id(n_sensor_2)), gamma_e],
+                            [kron(p_xb,id(n1),id(n2),id(2),id(n_sensor_2)), gamma_b],
+                            [kron(p_yb,id(n1),id(n2),id(2),id(n_sensor_2)), gamma_b]]
         # cavity loss
-        lindblad_ops.append([kron(i4,b_op(n1),id(n2),id(2),id(2)), cav_loss])
-        lindblad_ops.append([kron(i4,id(n1),b_op(n2),id(2),id(2)), cav_loss])
+        lindblad_ops.append([kron(i4,b_op(n1),id(n2),id(2),id(n_sensor_2)), cav_loss])
+        lindblad_ops.append([kron(i4,id(n1),b_op(n2),id(2),id(n_sensor_2)), cav_loss])
         # sensor loss
-        lindblad_ops.append([kron(i4,id(n1),id(n2),p_s,id(2)), sensor_linewidths[0]])
-        lindblad_ops.append([kron(i4,id(n1),id(n2),id(2),p_s), sensor_linewidths[1]])
+        lindblad_ops.append([kron(i4,id(n1),id(n2),p_s,id(n_sensor_2)), sensor_linewidths[0]])
+        if n_sensor_2 == 2:
+            lindblad_ops.append([kron(i4,id(n1),id(n2),id(2),p_s), sensor_linewidths[1]])
         # cavity-qd coupling
         # cavity energy/detuning
-        system_op.append(delta_cx*kron(i4,n(n1),id(n2),id(2),id(2)))
-        system_op.append(delta_cx*kron(i4,id(n1),n(n2),id(2),id(2)))
+        system_op.append(delta_cx*kron(i4,n(n1),id(n2),id(2),id(n_sensor_2)))
+        system_op.append(delta_cx*kron(i4,id(n1),n(n2),id(2),id(n_sensor_2)))
         # X-cavity
-        system_op.append(cav_coupl *  (kron(p_gx.T,b_op(n1),id(n2),id(2),id(2)) + kron(p_gx,bdag_op(n1),id(n2),id(2),id(2))))  # |1><0| otimes b + h.c.
-        system_op.append(cav_coupl *  (kron(p_xb.T,b_op(n1),id(n2),id(2),id(2)) + kron(p_xb,bdag_op(n1),id(n2),id(2),id(2))))  # |3><1| otimes b + h.c.
+        system_op.append(cav_coupl *  (kron(p_gx.T,b_op(n1),id(n2),id(2),id(n_sensor_2)) + kron(p_gx,bdag_op(n1),id(n2),id(2),id(n_sensor_2))))  # |1><0| otimes b + h.c.
+        system_op.append(cav_coupl *  (kron(p_xb.T,b_op(n1),id(n2),id(2),id(n_sensor_2)) + kron(p_xb,bdag_op(n1),id(n2),id(2),id(n_sensor_2))))  # |3><1| otimes b + h.c.
         # Y-cavity
-        system_op.append(cav_coupl *  (kron(p_gy.T,id(n1),b_op(n2),id(2),id(2)) + kron(p_gy,id(n1),bdag_op(n2),id(2),id(2))))  # |2><0| otimes b + h.c.
-        system_op.append(cav_coupl *  (kron(p_yb.T,id(n1),b_op(n2),id(2),id(2)) + kron(p_yb,id(n1),bdag_op(n2),id(2),id(2))))  # |3><2| otimes b + h.c.
+        system_op.append(cav_coupl *  (kron(p_gy.T,id(n1),b_op(n2),id(2),id(n_sensor_2)) + kron(p_gy,id(n1),bdag_op(n2),id(2),id(n_sensor_2))))  # |2><0| otimes b + h.c.
+        system_op.append(cav_coupl *  (kron(p_yb.T,id(n1),b_op(n2),id(2),id(n_sensor_2)) + kron(p_yb,id(n1),bdag_op(n2),id(2),id(n_sensor_2))))  # |3><2| otimes b + h.c.
         threshold = "8"  # threshold for PT generation
         boson_e_max = 7  # maximum boson energy in meV
-        boson_op = kron(x,id(n1),id(n2),id(2),id(2)) + kron(y,id(n1),id(n2),id(2),id(2)) + 2*kron(b,id(n1),id(n2),id(2),id(2))  # operator that couples to phonons
-        modes = {"x": kron(p_gx.T+p_xb.T, id(n1), id(n2),id(2),id(2)), "y": kron(p_gy.T+p_yb.T, id(n1), id(n2),id(2),id(2))}  # coupling to x and y polarized light
-        rf_op = kron(x + y + 2*b, id(n1), id(n2),id(2),id(2))  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
+        boson_op = kron(x,id(n1),id(n2),id(2),id(n_sensor_2)) + kron(y,id(n1),id(n2),id(2),id(n_sensor_2)) + 2*kron(b,id(n1),id(n2),id(2),id(n_sensor_2))  # operator that couples to phonons
+        modes = {"x": kron(p_gx.T+p_xb.T, id(n1), id(n2),id(2),id(n_sensor_2)), "y": kron(p_gy.T+p_yb.T, id(n1), id(n2),id(2),id(n_sensor_2))}  # coupling to x and y polarized light
+        rf_op = kron(x + y + 2*b, id(n1), id(n2),id(2),id(n_sensor_2))  # rotating frame operator, if an RF is used (primarily for calculation of dressed states)
 
         # filter dimensions
         rho0 = remove_dim_numbers(rho0, states_to_remove)

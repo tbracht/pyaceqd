@@ -29,9 +29,9 @@ class OnePhotonTimebin(TimeBin):
         rho_ll = self.rho_ll() * self.gamma_e
         norm = rho_ee+rho_ll  # for normalization (trace of the density matrix)
         t1, rho_el_g1 = self.rho_el()
-        rho_el = np.abs(np.trapz(rho_el_g1,t1))
+        rho_el = np.abs(np.trapezoid(rho_el_g1,t1))
         if first_abs:
-            rho_el = np.trapz(np.abs(rho_el_g1),t1)
+            rho_el = np.trapezoid(np.abs(rho_el_g1),t1)
         rho_el = rho_el * self.gamma_e
         if verbose:
             print("not normalized:")
@@ -59,7 +59,7 @@ class OnePhotonTimebin(TimeBin):
         t,x = self.system(0,self.tb,output_ops=output_ops,suffix="ee",**self.options)
         x = np.real(x)
         t = np.real(t)
-        rho_ee = np.trapz(x,t)
+        rho_ee = np.trapezoid(x,t)
         return rho_ee
     
     def rho_ll(self):
@@ -71,7 +71,7 @@ class OnePhotonTimebin(TimeBin):
         n_t = int(self.tb/self.dt)
         relevant_x = x[-n_t:]
         relevant_t = t[-n_t:]
-        rho_ee = np.trapz(relevant_x,relevant_t)
+        rho_ee = np.trapezoid(relevant_x,relevant_t)
         return rho_ee
 
     def rho_el(self, dt_small=0.1):
@@ -146,7 +146,7 @@ class OnePhotonCavity(TimeBin):
                 g1_temp[:n_tau] = np.conjugate(np.flip(futures[i][2][-n_tau:]))
                 g1_temp[n_tau] = futures[i][1][-(n_tau+1)]
                 g1_temp[-n_tau:] = futures[i][2][-n_tau:]
-                _G1[i] = np.trapz(g1_temp,t2)
+                _G1[i] = np.trapezoid(g1_temp,t2)
         return t1,_G1
     
     def g1_t1t(self, t0=30, tend=130, T_sep=70):
@@ -182,7 +182,7 @@ class OnePhotonCavity(TimeBin):
                 g1_temp = np.zeros([2*n_tau+1],dtype=complex)
                 n_t2 = 2*n_tau+1
                 g1_temp[-n_t2:] = futures[i][2][-n_t2:]
-                _G1[i] = np.trapz(g1_temp,t2)
+                _G1[i] = np.trapezoid(g1_temp,t2)
         return t1,_G1
     
     def g1_t1(self, t0=30, tend=130, T_sep=70):
@@ -262,5 +262,5 @@ class OnePhotonCavity(TimeBin):
                     for j in range(n_el):
                         # _G1[len(t1)-n_el+j,len(t2)-1-j] = j+1
                         _G1[len(t1)-n_el+j,len(t2)-1-j] = futures[i][2][-n_el + j]
-        _G1 = np.trapz(_G1, t2, axis=1)
+        _G1 = np.trapezoid(_G1, t2, axis=1)
         return t1,_G1

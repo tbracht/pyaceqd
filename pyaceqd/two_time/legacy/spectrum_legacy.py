@@ -9,7 +9,7 @@ from pyaceqd.timebin.timebin import TimeBin
 # from pyaceqd.two_level_system.tls import tls
 # from pyaceqd.four_level_system.linear import biexciton
 from pyaceqd.pulses import ChirpedPulse
-from pyaceqd.two_time.correlations import tl_two_op_two_time, tl_three_op_two_time
+from pyaceqd.two_time.legacy.correlations import tl_two_op_two_time, tl_three_op_two_time
 try:
     from pyaceqd.two_time import propagate_tau_module
 except ImportError:
@@ -520,7 +520,7 @@ class Spectrum(TimeBin):
         rho0 = op_to_matrix(init_rho)
         return rho0
 
-from pyaceqd.two_level_system.legacy_tls import tls
+from pyaceqd.two_level_system.legacy.legacy_tls import tls
 options = {"verbose": False, "gamma_e": 1/100, "lindblad": True, "phonons": True, "use_infinite": True, "ae": 5, "temperature": 4, "temp_dir": temp_dir}
 a = Spectrum(tls, "|0><1|_2", "|1><0|_2", ChirpedPulse(tau_0=3, e_start=0, alpha=0, t0=5*3, e0=6, polar_x=1), dt=0.1, dt_small=0.1, n_big=10, tend=2500, t_mem=15, gaussian_dt=False, simple_exp=False, gaussian_t=30, verbose=True, workers=15, options=options, dm=False)
 

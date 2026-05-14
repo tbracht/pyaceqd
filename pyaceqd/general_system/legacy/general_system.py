@@ -10,8 +10,9 @@ import sys
 
 hbar = constants.hbar  # meV*ps
 temp_dir = constants.temp_dir
-sys.path.append(constants.pybind_path)  # path to pybinds for ACE
-from ACEutils import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, read_outfile, DynamicalMap
+# sys.path.append(constants.pybind_path)  # path to pybinds for ACE
+from ACE._ACE import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, DynamicalMap
+from ACE.utils import read_outfile
 
 
 def sanity_checks(system_op,phonons,boson_op,initial,interaction_ops,verbose):
@@ -360,3 +361,132 @@ def system_ace_stream(t_start, t_end, *pulses, dt=0.01, phonons=False, t_mem=20.
     if calc_dynmap:
         return result, _dm
     return result
+
+from ACE._ACE import Parameters, FreePropagator, ProcessTensors, InitialState, OutputPrinter, TimeGrid, Simulation, DynamicalMap, StringToMatrix
+from pyaceqd.general_system.general_system import _get_pt_name, _calc_PT_file, generate_rf
+
+def system_ace(t_start, t_end, *pulses, dt=0.01, phonons=False, ae=3.0, temperature=1, verbose=False, pt_file=None, \
+                  multitime_op=None, system_prefix="", threshold="10", boson_e_max=7, system_op=None, boson_op=None, initial=None, lindblad_ops=None, output_ops=[], prepare_only=False, rf_op=None, rf_array=None, firstonly=False, \
+                  J_to_file=None, J_file=None, factor_ah=None, print_H=False, calc_dynmap=False, rho0=None):
+    """
+    ACE: separate calculation for the process tensor, which can be used to simulate way longer time scales.
+    """
+    # check for multi-time operations
+    if multitime_op is not None:
+        # make sure it's a list, if only one MTO is given as dict.
+        if isinstance(multitime_op, dict):
+            multitime_op = [multitime_op]
+
+    if phonons:
+        # determine pt_file name
+        if pt_file is None:
+            pt_file = _get_pt_name(system_prefix, ae, temperature, threshold, dt, J_file)
+        if verbose and os.path.exists(pt_file+"_initial") and J_to_file is None:
+            print("using pt_file " + pt_file)
+        # try to detect pt_file, else calculate it
+        if not os.path.exists(pt_file+"_initial") or J_to_file is not None:
+            print("{} not found. Calculating...".format(pt_file))
+            _sysop = [StringToMatrix(op) for op in system_op] if system_op is not None else None
+            _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, pt_file, boson_e_max=boson_e_max, verbose=verbose, J_file=J_file, J_to_file=J_to_file, system_op=_sysop)
+
+    plist = []
+    plist += ["dt {}".format(dt)]
+    plist += ["ta {}".format(t_start)]
+    plist += ["te {}".format(t_end)]
+    plist += ["use_symmetric_Trotter true"]
+    if phonons:
+        plist += ["add_PT {}".format(pt_file)]
+    # initial state
+    if initial is not None:
+        plist += ["initial {{ {} }}".format(initial)]
+    # hamiltonian of the system
+    if system_op is not None:
+        for _op in system_op:
+            plist += ["add_Hamiltonian {{ {} }}".format(_op)]
+    # lindblad operators
+    if lindblad_ops is not None:
+        for _op in lindblad_ops:
+            # assume lindblad_ops contains tuples of (operator, rate), ex:("|0><1|_2",1/100)
+            plist += ["add_Lindblad {} {{ {} }}".format(_op[1],_op[0])]
+    # multitime operators, left, right or sandwitched
+    if multitime_op is not None:
+        for _mto in multitime_op:
+            # apply_Operator 20 {|0><1|_2} would apply the operator |0><1|_2 at t=20 from the left and the h.c. on the right on the density matrix
+            # note the Operator is applied at time t, i.e., in this example at t=20, so its effect is only visible at t=20+dt
+            # if applyBefore ist true, the effect is visible at t=20
+            plist += ["apply_Operator{applyFrom} {time} {{ {operator} }} {applyBefore}\n".format(**_mto)]
+    # output 
+    for _op in output_ops:
+        plist += ["add_Output {{ {} }}".format(_op)]
+
+    if prepare_only:
+        for line in plist:
+            print(line)
+        return [np.array([0,0]) for i in range(1+len(output_ops))]
+    
+    param = Parameters(plist)
+    if rho0 is not None:
+        initial_state = InitialState(rho0)
+    else:
+        initial_state = InitialState(param)
+
+    fprop = FreePropagator(param)
+    tgrid = TimeGrid(param)
+    t = np.round(np.array(tgrid.get_all()), decimals=10)
+    PT = ProcessTensors(param)
+    
+    sim = Simulation(param)
+    # rotating frame: changes the energies of the hamiltonian, using the operator in rf_op
+    # this is done using the add_Pulse function of ACE, as this can time-dependently change the system hamiltonian
+    # note that it automatically adds the hermitian conjugate of rf_op as well, so a factor of 1/2 is needed
+    # the rf_operator should usually be diagonal in the system hamiltonian basis, so it should not be complex valued.
+    if rf_op is not None:
+        if rf_array is None:
+            # Caution: This also re-generates the pulses, removing the temporal
+            # oscillation of (at least) the first pulse.
+            _, rf_array, new_pulses = generate_rf(t=t, pulses=pulses, firstonly=firstonly)
+            pulses = new_pulses
+        fprop.add_Pulse((t,-0.5*hbar*rf_array), rf_op)
+            
+    # after potential RF, add pulses
+    if firstonly:
+        if verbose:
+            print("only using first pulse for dynamics")
+        pulses = [pulses[0]]
+    
+    for pulse in pulses:
+        if verbose:
+            print("Adding pulse: {}".format(pulse))
+        # each pulse needs to have the correct interaction_op assigned
+        fprop.add_Pulse((t, -0.5*hbar*np.pi*pulse.get_total(t)), pulse.interaction_op)                    
+
+    if print_H:
+        dim = fprop.get_dim()
+        H_total = np.empty((len(t), dim, dim), dtype=complex)
+        for i, ti in enumerate(t):
+            H_total[i] = fprop.get_Htot(ti)
+        return t, H_total
+
+    if calc_dynmap:
+        dynmap = DynamicalMap(fprop, PT, sim, tgrid)
+        _dm = np.array(dynmap.E)
+        return [t], _dm
+    
+    outp = OutputPrinter(param)
+    outp.do_extract = True
+    sim.run(fprop, PT, initial_state, tgrid, outp)
+    # if calc_dynmap:
+    #     # if get_M_t is not None:
+    #     #     fprop.update(get_M_t,dt)
+    #     #     return fprop.M
+    #     dynmap = DynamicalMap(fprop, PT, sim, tgrid)
+    #     _dm = np.array(dynmap.E)
+            
+    result = outp.extract()
+    # t = result[0]
+    # reshaped = result[1].T
+    reshaped = np.vstack([result[0][np.newaxis, :], result[1].T])
+    # if calc_dynmap:
+    #     return reshaped, _dm
+    # return t, reshaped
+    return reshaped

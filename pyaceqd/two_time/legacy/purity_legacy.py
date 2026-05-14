@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, wait, ProcessPoolExecutor
 from pyaceqd.tools import construct_t, simple_t_gaussian, export_csv, calc_tl_dynmap_pseudo, extract_dms, op_to_matrix
 from pyaceqd.timebin.timebin import TimeBin
 from pyaceqd.pulses import PulseTrain, ChirpedPulse
-from pyaceqd.two_time.correlations import tl_two_op_two_time, tl_three_op_two_time
+from pyaceqd.two_time.legacy.correlations import tl_two_op_two_time, tl_three_op_two_time
 try:
     from pyaceqd.two_time import propagate_tau_module
 except ImportError:

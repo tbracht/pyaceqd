@@ -252,7 +252,7 @@ class PulseGenerator:
         width_f = self._sig_fwhm(field_or_intesity,sig_or_fwhm,width_f)
         gauss_power = np.array(gauss_power)
         psf = np.exp(-0.5*(self.frequencies/width_f)**2)*1/np.sqrt(2*np.pi*width_f**2)**gauss_power.astype(complex)
-        psf /= np.trapz(psf,self.frequencies)
+        psf /= np.trapezoid(psf,self.frequencies)
         if polarisation.lower()[0] == 'b' or polarisation.lower()[0] == 'x':
             old_angle = np.unwrap(np.angle(self.frequency_representation_x)).real
             self.frequency_representation_x = np.convolve(np.abs(self.frequency_representation_x),np.abs(psf),mode='same').astype(complex)/np.abs(self.tend-self.t0)
@@ -270,7 +270,7 @@ class PulseGenerator:
         width_f = self._sig_fwhm(field_or_intesity,sig_or_fwhm,width_f)
         gauss_power = np.array(gauss_power)
         psf = np.exp(-0.5*(self.frequencies/width_f)**2)*1/np.sqrt(2*np.pi*width_f**2)**gauss_power.astype(complex)
-        psf /= np.trapz(psf,self.frequencies)
+        psf /= np.trapezoid(psf,self.frequencies)
         if polarisation.lower()[0] == 'b' or polarisation.lower()[0] == 'x':
             old_angle = np.unwrap(np.angle(self.frequency_filter_x)).real
             self.frequency_filter_x = self._convolve_normalise(np.abs(self.frequency_filter_x),np.abs(psf)).astype(complex)
@@ -306,7 +306,7 @@ class PulseGenerator:
         pass
 
     def _update_pulse_power(self):
-        self.pulse_power = np.trapz(y=np.abs(self.temporal_representation_x)**2 + np.abs(self.temporal_representation_y)**2, x=np.real(self.time))
+        self.pulse_power = np.trapezoid(y=np.abs(self.temporal_representation_x)**2 + np.abs(self.temporal_representation_y)**2, x=np.real(self.time))
 
     ### Filter functions
         # Filters that can be applied to Fourier space
@@ -355,15 +355,15 @@ class PulseGenerator:
         spec_x = np.abs(self.frequency_representation_x**2)
         spec_y = np.abs(self.frequency_representation_y**2)
         
-        spec_x_norm = spec_x/integrate.trapz(np.abs(spec_x),frequ)
-        spec_y_norm = spec_y/integrate.trapz(np.abs(spec_y),frequ)
+        spec_x_norm = spec_x/integrate.trapezoid(np.abs(spec_x),frequ)
+        spec_y_norm = spec_y/integrate.trapezoid(np.abs(spec_y),frequ)
         
-        spec_cum_x = T*integrate.cumtrapz(spec_x_norm,frequ,initial=0)
-        spec_cum_y = T*integrate.cumtrapz(spec_y_norm,frequ,initial=0)
+        spec_cum_x = T*integrate.cumtrapezoid(spec_x_norm,frequ,initial=0)
+        spec_cum_y = T*integrate.cumtrapezoid(spec_y_norm,frequ,initial=0)
         
         shift = T/2 #??
-        spec_cum_cum_x = integrate.cumtrapz(spec_cum_x-shift,frequ,initial=0)
-        spec_cum_cum_y = integrate.cumtrapz(spec_cum_y-shift,frequ,initial=0)   
+        spec_cum_cum_x = integrate.cumtrapezoid(spec_cum_x-shift,frequ,initial=0)
+        spec_cum_cum_y = integrate.cumtrapezoid(spec_cum_y-shift,frequ,initial=0)   
         
         if pol.lower()[0] == 'b' or pol.lower()[0] == 'x':
             self._add_filter(np.exp(1j*spec_cum_cum_x),pol='x',merging='*')
@@ -1076,15 +1076,15 @@ class PulseGenerator:
             return field_y(time+tau/2)*np.conj(field_y(time-tau/2))*np.exp(1j*2*np.pi*frequ*tau)
         for i, time in enumerate(self.time):
             for j, frequ in enumerate(self.frequencies):    
-                wigner_x[i,j] = np.trapz(wigner_integrand_x(self.time,time,frequ),x=self.time)
-                wigner_y[i,j] = np.trapz(wigner_integrand_y(self.time,time,frequ),x=self.time)
+                wigner_x[i,j] = np.trapezoid(wigner_integrand_x(self.time,time,frequ),x=self.time)
+                wigner_y[i,j] = np.trapezoid(wigner_integrand_y(self.time,time,frequ),x=self.time)
 
         self.wigner_x = wigner_x
         self.wigner_y = wigner_y        
         print('wigner power:')
-        print(np.trapz(np.trapz(np.real(wigner_x),x=self.time,axis=0),x = -self.frequencies,axis=0) + np.trapz(np.trapz(np.real(wigner_y),x=self.time,axis=0),x = -self.frequencies,axis=0))
+        print(np.trapezoid(np.trapezoid(np.real(wigner_x),x=self.time,axis=0),x = -self.frequencies,axis=0) + np.trapezoid(np.trapezoid(np.real(wigner_y),x=self.time,axis=0),x = -self.frequencies,axis=0))
 
-        # test_int =  2*np.trapz(np.real(wigner_x),x=-self.frequencies,axis=1) 
+        # test_int =  2*np.trapezoid(np.real(wigner_x),x=-self.frequencies,axis=1) 
         # #test_int /= np.max(test_int)
 
         # test_int_2 = np.abs(self.temporal_representation_x)**2 

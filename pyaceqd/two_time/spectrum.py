@@ -15,6 +15,12 @@ except ImportError as exc:
                   ImportWarning,
                   stacklevel=2,)
     propagate_tau_module = None
+try:
+    from pyaceqd.two_time import propagate_tau_nb_module
+    from pyaceqd.two_time import propagate_tau_nb_eigen_module
+except ImportError:
+    propagate_tau_nb_module = None
+    propagate_tau_nb_eigen_module = None
 import pyaceqd.constants as constants
 
 hbar = constants.hbar
@@ -118,6 +124,9 @@ class Spectrum:
         if dt_big is None:
             dt_big = 10 * dt_small
 
+        self.dt_big = dt_big
+        self.dt_small = dt_small
+
         time_generator = UnregularTimeAxis(0, tend, self.max_pulse_t + self.t_mem,
                                            dt_small=dt_small, dt_big=dt_big, pulses=pulses,
                                            factor_tau=1, include_tend=add_tend, round_dt=True)
@@ -141,7 +150,9 @@ class Spectrum:
     def get_tl(self, t_mem=None):
         if t_mem is None:
             t_mem = self.max_pulse_t
-        tend = 2 * t_mem
+        tend = np.round(t_mem + 10*self.dt_small,6)
+        if self.verbose:
+            print(f"Calculating time-local map with memory time {t_mem} and total time {tend}...")
         _t, dm = self.system.run(0, tend, *self.pulses, multitime_op=[], calc_dynmap=True)
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
@@ -271,7 +282,6 @@ class Spectrum:
     def G1_tl(self):
         if self.phonons:
             return self.G1_tl_phonons()
-        _require_propagate_tau_tl()
         dim = self.dim
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0
@@ -282,7 +292,6 @@ class Spectrum:
 
         if self.tl_map is None:
             self.get_tl()
-        dm_tl = np.asfortranarray(self.tl_dms.transpose(1, 2, 0))
         dm_s = self.tl_map
 
         _tend = self.t1[-1] + tau_max
@@ -292,10 +301,34 @@ class Spectrum:
         opB_mat = self.sigma_xdag
         opC_mat = self.sigma_x
 
-        G1 = propagate_tau_module.calc_onetime_simple(
-            dm_block=dm_tl, dm_s=dm_s, rho_init=rho0.reshape(dim**2),
-            n_tb=int(self.tend / self.dt), dim=dim,
-            opa=opA_mat, opb=opB_mat, opc=opC_mat, time=t_axis, time_sparse=self.t1)
+        if propagate_tau_nb_module is not None:
+            print("Using C++ time-local propagation for G1 calculation.")
+            # C++ path: dm_block is (n_map, dim2, dim2) C-order — no transpose needed
+            dm_block = np.ascontiguousarray(self.tl_dms)
+            n_tb = int(self.tend / self.dt)  # number of steps in tau axis
+            G1 = np.empty((len(self.t1), n_tb + 1), dtype=complex)
+            start = time.time()
+            tl = propagate_tau_nb_module.TimeLocalPhononfree(dm_block, dm_s, dim)
+            tl.calc_G1(
+                rho_init=np.ascontiguousarray(rho0.reshape(dim**2), dtype=complex),
+                opA=np.ascontiguousarray(opA_mat, dtype=complex),
+                opB=np.ascontiguousarray(opB_mat, dtype=complex),
+                opC=np.ascontiguousarray(opC_mat, dtype=complex),
+                time=t_axis, time_sparse=self.t1,
+                n_tb=n_tb, out=G1)  # here we directly write into the preallocated G1 array to avoid an extra copy
+            end = time.time()
+            print(f"C++ G1: total={end-start:.3f}s")
+        else:
+            print("Using Fortran time-local propagation for G1 calculation.")
+            _require_propagate_tau_tl()
+            start = time.time()
+            dm_tl = np.asfortranarray(self.tl_dms.transpose(1, 2, 0))
+            G1 = propagate_tau_module.calc_onetime_simple(
+                dm_block=dm_tl, dm_s=dm_s, rho_init=rho0.reshape(dim**2),
+                n_tb=int(self.tend / self.dt), dim=dim,
+                opa=opA_mat, opb=opB_mat, opc=opC_mat, time=t_axis, time_sparse=self.t1)
+            end = time.time()
+            print(f"Fortran G1 calculation took {end - start} seconds.")
         return self.t1, tau, np.conj(G1)
 
     def G1(self):
@@ -370,7 +403,53 @@ class Spectrum:
             print(f"Spectrum calculation took {end_time - start_time} seconds.")
         return np.fft.fftshift(fft_freqs), spectrum, spectra
 
-    def get_time_dependent_spectrum_tl(self, tend=100, omega_min=-5, omega_max=5, domega=0.1, plot=False):
+    
+    def get_onesided_spectrum(self, save_g1_dir=None, load=None, dm=True, timeit=False, e_min=-10, e_max=10, n_e=1000):
+        """
+        Calculates the spectrum via G1: <sigma_xdag(t1+tau) sigma_x(t1)>
+        """
+        if load is not None and os.path.exists(load + "g1.npy"):
+            t_axis = np.load(load + "t_axis.npy")
+            tau_axis = np.load(load + "tau_axis.npy")
+            g1 = np.load(load + "g1.npy")
+        else:
+            if dm:
+                t_axis, tau_axis, g1 = self.G1_tl()
+            else:
+                t_axis, tau_axis, g1 = self.G1()
+        if save_g1_dir is not None and load is None:
+            np.save(save_g1_dir + "g1.npy", g1)
+            np.save(save_g1_dir + "t_axis.npy", t_axis)
+            np.save(save_g1_dir + "tau_axis.npy", tau_axis)
+        if timeit:
+            start_time = time.time()
+        dtau = np.abs(tau_axis[1] - tau_axis[0])
+        energies = np.linspace(e_min, e_max, n_e)
+        spectrum = np.zeros(len(energies))
+        
+        ## if for some reason we want to do FT for every time step. very slow.
+        # dt0 = np.abs(t_axis[1] - t_axis[0])
+        # if self.dt_small != self.dt_big:
+        #     print("WARNING: dt_small and dt_big are different, get_onesided_spectrum may be inaccurate.")
+        #     print("set dt_small = dt_big, and both divisible by dt without remainder")
+        # n_skip = int(dt0 / self.dt)
+        # print(n_skip)
+        # spectrum = np.trapezoid(g1[0] * np.exp(-1j * energies[:, None] * tau_axis / hbar), tau_axis)  * 0.5 * dt0  # initial point with half weight
+        # for j in tqdm.trange(1, len(g1)):
+        #     dt = np.abs(t_axis[j] - t_axis[j - 1])  # should be regular, but just in case
+        #     if j == len(g1) - 1:
+        #         dt = dt * 0.5  # trapezoidal correction for the last point
+        #     # index = np.where(np.isclose(tau_axis, tau_axis[-1] - t_axis[j], atol=1e-8))[0]
+        #     # print(index)
+        #     # spectrum += np.trapezoid(g1[j, :index] * np.exp(-1j * energies[:, None] * tau_axis[:index] / hbar), tau_axis[:index]) * dt
+        #     spectrum += np.trapezoid(g1[j, :-n_skip*j] * np.exp(-1j * energies[:, None] * tau_axis[:-n_skip*j] / hbar), tau_axis[:-n_skip*j]) * dt
+        
+        # approximation for t-> infinity: first integral, then oneside FT
+        integrated_g1 = np.trapezoid(g1, t_axis, axis=0)
+        spectrum = np.trapezoid(integrated_g1 * np.exp(-1j * energies[:, None] * tau_axis / hbar), tau_axis)
+        return energies, np.real(spectrum)
+
+    def get_time_dependent_spectrum_tl(self, tend=100, omega_min=-5, omega_max=5, domega=0.1, plot=False, filename="timedep_spectrum_tl"):
         _dt = self.dt
         self.tend = tend
         n_t = int(tend / _dt)
@@ -388,12 +467,12 @@ class Spectrum:
             plt.xlabel("Frequency (meV)")
             plt.ylabel("Time (ps)")
             plt.colorbar(label="log(S(omega,t))")
-            plt.savefig("time_dep_spectrum_tl.png")
+            plt.savefig(filename+".png")
             plt.clf()
             plt.plot(omega_axis, np.log(np.abs(S_omega_t[:, -1]) + 0.001))
             plt.xlabel("Frequency (meV)")
             plt.ylabel("log(S(omega,tend))")
-            plt.savefig("spectrum_at_tend.png")
+            plt.savefig(filename+"_tend.png")
         return omega_axis, t_axis, S_omega_t
 
     def get_time_dependent_spectrum(self, tend, omega_min=-5, omega_max=5, domega=0.1):
