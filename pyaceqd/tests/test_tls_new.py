@@ -7,7 +7,7 @@ from pyaceqd.tools import ketbra
 from pyaceqd.helpers.ace_operators import op_to_matrix
 from pyaceqd.constants import hbar
 
-p1 = ChirpedPulse(tau_0=4, e_start=0, t0=4*4, e0=1, polarization="x")
+p1 = ChirpedPulse(tau_0=4, detuning=0, t_center=4*4, pulse_area=1, polarization="x")
 # p1 = SmoothRectangle(tau=60, t0=40, e0=3.87*hbar, polarization="x", e_start=-6, alpha_onoff=1.)
 # print(p1)
 output_ops=["|0><0|_2","|1><1|_2"]
@@ -38,8 +38,8 @@ exit()
 a.dressed_states(0, 10*4, p1, print_states_t=4*4)
 
 plt.clf()
-p1 = ChirpedPulse(tau_0=5, e_start=-2*hbar, t0=4*5, e0=14, polarization="x")
-p2 = ChirpedPulse(tau_0=5, e_start=2*hbar, t0=4*5, e0=14, polarization="x")
+p1 = ChirpedPulse(tau_0=5, detuning=-2*hbar, t_center=4*5, pulse_area=14, polarization="x")
+p2 = ChirpedPulse(tau_0=5, detuning=2*hbar, t_center=4*5, pulse_area=14, polarization="x")
 # p1 = ChirpedPulse(tau_0=2.4, e_start=-8, alpha=0, e0=22.65, polar_x=1.0, t0=2*4, polarization="x")
 # p2 = ChirpedPulse(tau_0=3, e_start=-19.163, alpha=0, e0=19.29, polar_x=1.0, t0=2*4, polarization="x")
 

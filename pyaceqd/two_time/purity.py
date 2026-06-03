@@ -32,21 +32,28 @@ temp_dir = constants.temp_dir
 def get_max_pulse_t(pulses):
     times = []
     for p in pulses:
-        times.append(p.t0 + 4*p.tau)
+        times.append(p.t_center + 4*p.tau)
     return max(times)
+
+def trace_rho(rho, ops):
+    val = np.zeros((rho.shape[0], len(ops)), dtype=complex)
+    for k, op in enumerate(ops):
+        for i in range(rho.shape[0]):
+            val[i, k] = np.trace(op@rho[i])
+    return val.T
 
 
 class Indistinguishability:
-    def __init__(self, system, sigma_x, sigma_xdag, *pulses, tb=800, t_mem=10, dt_small=0.1,
+    def __init__(self, system, sigma_x, *pulses, tb=800, t_mem=10, dt_small=0.1,
                  regular_stepping=False, variable_stepping=False, 
-                 exponential_stepping=False, max_pulse_t=None, verbose=False, workers=15, t_simul=None, 
+                 exponential_stepping=False, max_pulse_t=None, verbose=False, workers=15,
                  factor_t=1, factor_tau=2, dt_big=None, add_tend=True, use_dm=True):
         self.pulses = pulses
         self.system = system
         self.factor_t = factor_t
         self.factor_tau = factor_tau
         self.sigma_x = sigma_x
-        self.sigma_xdag = sigma_xdag
+        self.sigma_xdag = np.conj(sigma_x.T)
         self.use_dm = use_dm
         self.max_pulse_t = max_pulse_t
         self.tb = tb
@@ -64,7 +71,7 @@ class Indistinguishability:
         self.dt = system.dt
         if self.dt > dt_small:
             raise ValueError("dt_small for purity calculation cannot be smaller than system dt: {} > {}".format(dt_small, self.dt))
-        if np.mod(dt_small, self.dt) != 0:
+        if not np.isclose(np.mod(dt_small, self.dt),0):
             raise ValueError("dt_small for purity calculation must be a multiple of system dt: {} % {} != 0".format(dt_small, self.dt))
         self.phonons = system.phonons
         if not system.lindblad:
@@ -73,10 +80,10 @@ class Indistinguishability:
                 dt_big = 10*dt_small
 
         # mto checks
-        if sigma_x.shape != (self.dim,self.dim) or sigma_xdag.shape != (self.dim,self.dim):
-            raise ValueError("Sigma_x or sigma_xdag operator are dims: {}, {}, but system dim is {}x{}".format(sigma_x.shape, sigma_xdag.shape, self.dim, self.dim))
+        if self.sigma_x.shape != (self.dim,self.dim):
+            raise ValueError("Sigma_x operator is dim: {},, but system dim is {}x{}".format(self.sigma_x.shape, self.dim, self.dim))
 
-        time_generator = UnregularTimeAxis(0, tb, self.max_pulse_t + self.t_mem, dt_small=dt_small, dt_big=dt_big, pulses=pulses, factor_tau=factor_tau, include_tend=add_tend, round_dt=True)
+        time_generator = UnregularTimeAxis(0, tb, self.max_pulse_t + self.t_mem, dt_small=dt_small, dt_big=dt_big, pulses=pulses, include_tend=add_tend, round_dt=True)
 
         self.t1 = time_generator.time_axis_two_step(exponential_part=exponential_stepping)
         if variable_stepping:
@@ -411,11 +418,13 @@ class Indistinguishability:
         dms = np.array(dms, dtype=complex)
         return tl_map, dms
 
-    def calc_timedynamics_tl_phonons(self):
+    def calc_timedynamics_tl_phonons(self, output_ops=None, factor_t=None):
         tl_map, dms = self.get_tl_phonons(mtos=[], t_mtos=[])
         dm_sep1 = dms[0]
 
         factors = self.factor_t + self.factor_tau
+        if factor_t is not None:
+            factors = factor_t
         len_tb = int(self.tb/self.dt)
         t_total = np.linspace(0, factors*self.tb, factors*len_tb + 1)
         rho0 = np.zeros((self.dim,self.dim), dtype=complex)
@@ -432,13 +441,18 @@ class Indistinguishability:
             # now apply the time-local dynamical map
             for i in range(len(dm_sep1),len_tb+1):
                 rho_t[i+j*len_tb] = np.dot(tl_map, rho_t[i-1+j*len_tb])
-        return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))
+        rho_t = rho_t.reshape((len(t_total), self.dim, self.dim))
+        if output_ops is not None:
+            return t_total, trace_rho(rho_t, output_ops)
+        return t_total, rho_t
 
-    def calc_timedynamics_tl(self):
+    def calc_timedynamics_tl(self, output_ops=None, factor_t=None):
         if self.tl_map is None:
             # calculate the dynamical maps
             self.get_tl()
         factors = self.factor_t + self.factor_tau
+        if factor_t is not None:
+            factors = factor_t
         len_tb = int(self.tb/self.dt)
         t_total = np.linspace(0, factors*self.tb, factors*len_tb + 1)
         rho0 = np.zeros((self.dim,self.dim), dtype=complex)
@@ -458,7 +472,10 @@ class Indistinguishability:
             for i in range(len(self.tl_dms),len_tb+1):
                 rho_t[i+j*len_tb] = np.dot(self.tl_map, rho_t[i-1+j*len_tb])
                 self.tl_complete[i+j*len_tb-1] = self.tl_map
-        return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))  
+        rho_t = rho_t.reshape((len(t_total), self.dim, self.dim))
+        if output_ops is not None:
+            return t_total, trace_rho(rho_t, output_ops)
+        return t_total, rho_t
 
     def get_dm2_phonons_advanced(self, mtos, t_mto):
         # in principle, we don't have to calculate the tl-maps up until t_mto + pulse_max_t + self.t_mem + 2*self.dt,

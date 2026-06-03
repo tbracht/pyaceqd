@@ -198,22 +198,21 @@ def simple_t_gaussian(t0, texp, tend, dt_small=0.1, dt_big=1.0, *pulses, decimal
 class UnregularTimeAxis:
     """
     Can be used to generate time axes with different time steps in different regions.
-    t0: start time
-    tend: end time
-    t_switch: time where the time step changes from dt_small to dt_big
-    dt_small: time step for t < t_switch
-    dt_big: time step for t >= t_switch
-    pulses: list of Pulse objects, where the time step is dt_small around the pulses
-    factor_tau: factor to determine the region around the pulses with small time step
-    exponential_part: if True, adds an exponentially spaced part after t_switch
-    include_tend: if True, includes tend in the time axis
+
+    - t0: start time
+    - tend: end time
+    - t_switch: time where the time step changes from dt_small to dt_big
+    - dt_small: time step for t < t_switch
+    - dt_big: time step for t >= t_switch
+    - pulses: list of Pulse objects, where the time step is dt_small around the pulses
+    - exponential_part: if True, adds an exponentially spaced part after t_switch
+    - include_tend: if True, includes tend in the time axis
     """
-    def __init__(self, t0, tend, t_switch=0, dt_small=0.1, dt_big=1.0, pulses=[], factor_tau=4, include_tend=True, round_dt=True):
+    def __init__(self, t0, tend, t_switch=0, dt_small=0.1, dt_big=1.0, pulses=[], include_tend=True, round_dt=True):
         self.dt_small = dt_small
         self.dt_big = dt_big
         self.t_switch = t_switch
         self.pulses = pulses
-        self.factor_tau = factor_tau
         self.include_tend = include_tend
         self.t0 = t0
         self.tend = tend
@@ -236,6 +235,9 @@ class UnregularTimeAxis:
         return result[0] if is_scalar else result
 
     def time_axis_regular(self):
+        """
+        regular time axis with time step dt_small
+        """
         t_array = np.linspace(self.t0, self.tend, int((self.tend - self.t0)/self.dt_small) + 1, endpoint=self.include_tend)
         if self.round_dt:
             t_array = self._round_to_decimals(t_array)

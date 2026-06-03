@@ -1,7 +1,7 @@
 import numpy as np
 from pyaceqd.helpers.ace_operators import ketbra, kron
-from pyaceqd.general_system.legacy.general_system import system_ace_stream
-from pyaceqd.general_system.general_system import system_ace, GeneralSystemACE
+from pyaceqd.general_system.legacy.general_system import system_ace_stream, system_ace
+from pyaceqd.general_system.general_system import GeneralSystemACE
 from pyaceqd.general_system.legacy.general_dressed_states import dressed_states
 from pyaceqd.general_system.legacy.general_dressed_states_new import dressed_states_new
 from pyaceqd.helpers.ace_operators import ketbra

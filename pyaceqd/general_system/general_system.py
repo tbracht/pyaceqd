@@ -51,7 +51,7 @@ def generate_rf(t, pulses, firstonly=False, correct_phase=True):
             # if the pulses have different t0, we have to account for the phase difference
             # that arises from the energy difference during the delay between the pulses.
             # This is given by (e_start0 / hbar) * tau, where tau is the delay.
-            new_pulses[i].phase = new_pulses[i].phase - (e_start0/hbar)*(new_pulses[i].t0 - new_pulses[0].t0)
+            new_pulses[i].phase = new_pulses[i].phase - (e_start0/hbar)*(new_pulses[i].get_tcenter() - new_pulses[0].get_tcenter())
         print("new e_start for pulse {}: {}".format(i, e_start-e_start0))
     if firstonly:
         new_pulses = [new_pulses[0]]
@@ -141,7 +141,7 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
 class GeneralSystemACE:
     def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7,
                  system_op=None, boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
-                 colors=None, propagate_Taylor=None, rho0=None):
+                 colors=None, propagate_Taylor=None, rho0=None, expand_pt=None):
         """
         ACE: separate calculation for the process tensor, which can be used to simulate long time scales with interaction to the environment.
         """
@@ -157,17 +157,23 @@ class GeneralSystemACE:
         
         self.dt = dt
         self.lindblad = lindblad
-        if isinstance(system_op, np.ndarray) and system_op.ndim == 2:
-            system_op = [system_op]
+        if isinstance(system_op,list):
+            _system_op = system_op[0]
+            for i in range(1, len(system_op)):
+                _system_op += system_op[i]
+            system_op = _system_op
         self.system_op = system_op
         self.lindblad_ops = lindblad_ops
 
         self.phonons = phonons
+        self.expand_pt = expand_pt
         if self.phonons:
             # parameters for process tensor calculation
             if boson_op is None:
                 raise ValueError("boson_op must be provided when phonons=True")
             self.pt_file = pt_file
+            if self.pt_file is not None:
+                self.pt_file = os.path.join(pt_dir, self.pt_file)
             if self.pt_file is None:
                 self.pt_file = _get_pt_name(pt_dir+system_prefix, ae, temperature, threshold, dt, J_file)
             if verbose and os.path.exists(self.pt_file+"_initial") and J_to_file is None:
@@ -195,8 +201,41 @@ class GeneralSystemACE:
         self.colors = colors  # optional colors for plotting
         self.rho0 = rho0  # initial density matrix as numpy array
 
+        # dict to store all args
+        self.args = {
+            "dt": dt,
+            "phonons": phonons,
+            "ae": ae,
+            "temperature": temperature,
+            "verbose": verbose,
+            "pt_file": pt_file,
+            "system_prefix": system_prefix,
+            "threshold": threshold,
+            "boson_e_max": boson_e_max,
+            "system_op": system_op,
+            "boson_op": boson_op,
+            "lindblad_ops": lindblad_ops,
+            "lindblad": lindblad,
+            "J_to_file": J_to_file,
+            "J_file": J_file,
+            "factor_ah": factor_ah,
+            "pt_dir": pt_dir,
+            "modes": modes,
+            "rf_op": rf_op,
+            "dim_prod": dim_prod,
+            "colors": colors,
+            "propagate_Taylor": propagate_Taylor,
+            "rho0": rho0
+        }
+
+    def copy(self):
+        """
+        creates a copy of the class instance, which can be used to run simulations with the same parameters but different pulses or time ranges.
+        """
+        return GeneralSystemACE(**self.args)
+
     def run(self, t_start, t_end, *pulses, multitime_op=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
-            return_H=False, rf=False, rf_array=None, get_M_t=None):
+            return_H=False, rf=False, rf_array=None, get_M_t=None, benchmark=False):
         """
         runs a simulation with the given parameters and the base parameters defined in the class init.
         rho0: initial density matrix as numpy array, overrides 'initial' parameter.
@@ -251,13 +290,7 @@ class GeneralSystemACE:
         
         fprop = FreePropagator(param)
         fprop.set_dim(self.dim)
-        first = True
-        for _op in self.system_op:
-            if first:
-                fprop.set_Hamiltonian(_op)
-                first = False
-            else:
-                fprop.add_Hamiltonian(_op)
+        fprop.set_Hamiltonian(self.system_op)
         if self.lindblad_ops is not None and self.lindblad:
             for _op in self.lindblad_ops:
                 # assume lindblad_ops contains tuples of (operator, rate), ex:(ketbra(0,1,2),1/100)
@@ -345,7 +378,10 @@ class GeneralSystemACE:
         sim = Simulation()
         PT = ProcessTensors()
         if self.phonons:
-            PT.add_PT(self.pt_file)
+            if self.expand_pt is not None:
+                PT.add_PT(self.pt_file, 0, self.expand_pt)  # expand_pt = N dims are added after the system dim. 
+            else:
+                PT.add_PT(self.pt_file)
         # calculate dynamical maps
         if calc_dynmap:
             if get_M_t is not None:  # option to return Propagator at specific time.
@@ -353,17 +389,28 @@ class GeneralSystemACE:
                 return fprop.M
             dynmap = DynamicalMap(fprop, PT, sim, tgrid)
             _dm = np.array(dynmap.E)
+            # _dm = dynmap.get_E()
             return t, _dm
         
         if not outputs_are_strings:
+            # check output operator dimensions
+            for _op in output_ops:
+                if _op.shape != (self.dim, self.dim):
+                    raise ValueError("Output operator has wrong shape: {}, expected: ({},{})".format(_op.shape, self.dim, self.dim))
             outp = OutputPrinter(output_ops)
         else:
             # output operators are strings eg "|0><1|_2"
             outp = OutputPrinter(param)  # empyt output_ops will return full density matrix
         outp.do_extract = True
+        if benchmark:
+            start = time.time()
         sim.run(fprop, PT, initial_state, tgrid, outp)
+        if benchmark:
+            end = time.time()
         result = outp.extract()
         #reshaped = np.vstack([result[0][np.newaxis, :].real, result[1].T])
+        if benchmark:
+            return result[0].real, result[1].T, end - start
         return result[0].real, result[1].T
     
     def dressed_states(self, t_start, t_end, *pulses, rho0=None, rf=True, rf_array=None, firstonly=False, no_pulse=False, colors=None,

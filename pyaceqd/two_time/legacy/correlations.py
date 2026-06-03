@@ -404,7 +404,7 @@ def get_spectrum(g1, tau, dir="", plot=False):
 # plt.clf()
 
 # # test against old G1 function
-from pyaceqd.two_time.G1 import G1_twols
+# from pyaceqd.two_time.G1 import G1_twols
 # t,tau,g1 = G1_twols(0,50,0,50,0.1,0.5,p1, gamma_e=2/100, phonons=False)
 # plt.clf()
 # plt.pcolormesh(t,tau, np.abs(g1).T,shading="gouraud")

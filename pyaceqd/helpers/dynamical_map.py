@@ -22,23 +22,16 @@ def calc_tl_dynmap_pseudo(dm, times, debug=False):
     # most importantly, rho[1] = dm[0]*rho0
     # output:
     # _dm_tl[i] = E_ti+1,ti, i.e., _dm_tl[i]*rho(ti) = rho(ti+1)
-    _dm_tl = np.zeros((len(times)-1,n,n),dtype=complex)
+    _dm_tl = np.empty((len(times)-1, n, n), dtype=complex)
     # rho[1] = dm[0]*rho0, dm[0] = E_t1,t0
     # E_ti+1,ti = E_ti+1,t0 * E_ti,t0^-1
     # i.e., _dm_tl[i] = dm[i] * dm[i-1]^-1
     # with dm[-1] = identity so we can use dm[0] as the first element
     _dm_tl[0] = dm[0]
-    for i in range(1,len(_dm_tl)):
-        try:
-            # _c = np.linalg.cond(dm[i])
-            # if _c > 1e6:
-            #_dm_tl[i] = np.dot(dm[i],truncated_svd_inv(dm[i-1], lam=1e-10))
-            # else:
-            _dm_tl[i] = np.dot(dm[i],np.linalg.pinv(dm[i-1],rcond=1e-12))
-        except np.linalg.LinAlgError:
-            _dm_tl[i] = np.dot(dm[i],np.linalg.pinv(dm[i-1]))
-            if debug:
-                print("Singular matrix at time = {}, index: {}, Tr(dm_tl[i])={}".format(times[i], i, np.real(np.trace(np.dot(_dm_tl[i],0.5*np.ones(4)).reshape(2,2)))))
+    if len(_dm_tl) > 1:
+        # Batched pseudo-inverse + matmul: both release the GIL for the full
+        # batch, avoiding per-step Python loop overhead that serialises threads.
+        _dm_tl[1:] = np.matmul(dm[1:], np.linalg.pinv(dm[:-1], rcond=1e-12))
     return _dm_tl
 
 def extract_dms(dm, times, tau_c, t_MTOs):
@@ -280,6 +273,9 @@ def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25,
     sv_tl = np.zeros((len(tl_map),len(tl_map[0])),dtype=float)
     for i in range(len(tl_map)):
         sv_tl[i] = np.linalg.svd(tl_map[i], compute_uv=False)
+    # count SVs that are larger than 1e-8 at last time step
+    n_sv_large = np.sum(sv_tl[-1] > 1e-8)
+    print(f"Number of singular values larger than 1e-8 at last time step: {n_sv_large}")
     plt.clf()
     plt.xlabel("Time")
     plt.ylabel("Singular values")
@@ -289,7 +285,35 @@ def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25,
     # plt.legend(loc="upper right")
     plt.yscale('log')
     # plt.tight_layout()
-    plt.ylim(1e-30,1e2)
+    # plt.ylim(1e-30,1e2)
     plt.xlim(0,xlim)
+    plt.legend()
     plt.savefig(filename+"_sv.png")
     plt.clf()
+
+def reorder_C(E_all):
+    """
+    E_all has shape (nt, d^2, d^2).
+    """
+    nt, d2, _ = E_all.shape
+    d = int(np.sqrt(d2))
+
+    E4 = E_all.reshape(nt, d, d, d, d)      # t, i, j, k, l
+    C4 = np.transpose(E4, (0, 1, 3, 2, 4))  # t, i, k, j, l
+    C_all = C4.reshape(nt, d*d, d*d)
+
+    return C_all
+
+def check_reorder_svd(tl_map, times, filename="dm_reorder_svd",xlim=25):
+    # entries in the dynamical map are (a,b)-> (ij,kl) = i*n+j, k*n+l
+
+    tl_map_reorder = reorder_C(tl_map)
+    # n = int(np.sqrt(tl_map.shape[1]))
+    # # reorder the dynamical map to (ik,jl) = i*n+k, j*n+l
+    # tl_map_reorder = np.zeros_like(tl_map)
+    # for i in range(n):
+    #     for j in range(n):
+    #         for k in range(n):
+    #             for l in range(n):
+    #                 tl_map_reorder[:,i*n+k,j*n+l] = tl_map[:,i*n+j,k*n+l]
+    check_tlmap_frobenius(tl_map_reorder, times, filename=filename, xlim=xlim)

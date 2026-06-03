@@ -114,7 +114,8 @@ class BiexcitonSensors(GeneralSystemACE):
         
 class BiexcitonPhotons(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, n_phot1=2, n_phot2=2, gamma_b=None, delta_xy=0, delta_b=4, shift_x=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None,
-             rho0=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", propagate_Taylor=None, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2):
+             rho0=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", propagate_Taylor=None, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2,
+             expand_pt=None):
         n1 = n_phot1 + 1
         n2 = n_phot2 + 1
         system_prefix = f"b_linear_cavity_{n1}_{n2}"
@@ -160,7 +161,7 @@ class BiexcitonPhotons(GeneralSystemACE):
         super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
                         threshold=threshold, boson_e_max=boson_e_max, rho0=rho0, system_op=system_op, boson_op=boson_op, lindblad_ops=lindblad_ops,
                         lindblad=lindblad, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir, modes=modes, rf_op=rf_op, dim_prod=dim_prod,
-                        propagate_Taylor=propagate_Taylor)
+                        propagate_Taylor=propagate_Taylor, expand_pt=expand_pt)
             
 class BiexcitonPhotonsReduced(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, n_phot1=2, n_phot2=2, gamma_b=None, delta_xy=0, delta_b=4, shift_x=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None,
