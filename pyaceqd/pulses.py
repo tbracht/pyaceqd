@@ -34,6 +34,9 @@ class Pulse:
         return "%s(tau=%r, detuning=%r, w_gain=%r, t_center=%r, pulse_area=%r)" % (
             self.__class__.__name__, self.tau, self.detuning, self.w_gain, self.t_center, self.pulse_area
         )
+
+    def set_repeat_tb(self, tb):
+        self.repeat_tb = tb
     
     def get_energy(self):
         return self.detuning, self.w_gain
@@ -44,6 +47,9 @@ class Pulse:
 
     def get_tcenter(self):
         return self.t_center
+
+    def set_tcenter(self, t_center):
+        self.t_center = t_center
 
     def get_envelope(self, t):
         return self.pulse_area * np.exp(-0.5 * ((t - self.t_center) / self.tau) ** 2) / (np.sqrt(2 * np.pi) * self.tau)
