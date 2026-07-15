@@ -77,11 +77,13 @@ def _gen_pt_worker(_generate_params, system_op=None):
     PT_w = ProcessTensors(param_w)
     _ = (param_w, fprop_w, tgrid_w, PT_w)
 
-def _get_pt_name(system_prefix, ae, temperature, threshold, dt, J_file):
+def _get_pt_name(system_prefix, ae, temperature, threshold, dt, J_file, factor_ah=None):
     ae = ae * 1.0  # ensure float
     temperature = temperature * 1.0
     if J_file is not None:
         pt_file = "{}_{}_{}k_th{}_dt{}.ptr".format(system_prefix,os.path.splitext(J_file)[0],temperature,threshold,dt)
+    if factor_ah is not None:
+        pt_file = "{}_{}nm_{}k_th{}_dt{}_ah{}.ptr".format(system_prefix,ae,temperature,threshold,dt,factor_ah)
     else:
         pt_file = "{}_{}nm_{}k_th{}_dt{}.pt".format(system_prefix,ae,temperature,threshold,dt)
     return pt_file
@@ -168,6 +170,10 @@ class GeneralSystemACE:
         self.phonons = phonons
         self.expand_pt = expand_pt
         if self.phonons:
+            self.temperature = temperature
+            self.ae = ae
+            self.factor_ah = factor_ah
+            self.boson_op = boson_op
             # parameters for process tensor calculation
             if boson_op is None:
                 raise ValueError("boson_op must be provided when phonons=True")
@@ -175,7 +181,7 @@ class GeneralSystemACE:
             if self.pt_file is not None:
                 self.pt_file = os.path.join(pt_dir, self.pt_file)
             if self.pt_file is None:
-                self.pt_file = _get_pt_name(pt_dir+system_prefix, ae, temperature, threshold, dt, J_file)
+                self.pt_file = _get_pt_name(pt_dir+system_prefix, ae, temperature, threshold, dt, J_file, factor_ah)
             if verbose and os.path.exists(self.pt_file+"_initial") and J_to_file is None:
                 print("using pt_file " + self.pt_file)
             # try to detect pt_file, else calculate it
@@ -233,6 +239,22 @@ class GeneralSystemACE:
         creates a copy of the class instance, which can be used to run simulations with the same parameters but different pulses or time ranges.
         """
         return GeneralSystemACE(**self.args)
+
+    def get_boson_j(self, e_max=7):
+        """
+        calculates the bosonic spectral density J(E) using the parameters provided for the PT calculation.
+        """
+        if self.phonons is False:
+            raise ValueError("get_boson_j can only be used when phonons=True")
+        j_file = self.pt_file + "_J"
+        if not os.path.exists(j_file):
+            _calc_PT_file(0.1, 1e-8, self.ae, self.factor_ah, self.temperature, self.boson_op,
+                                        self.pt_file, boson_e_max=e_max, verbose=False,
+                                        system_op=self.system_op, J_to_file=j_file)
+        data = np.loadtxt(j_file)
+        e = data[:,0]
+        j = data[:,1]
+        return e, j
 
     def run(self, t_start, t_end, *pulses, multitime_op=None, output_ops=[], prepare_only=False, rho0=None, calc_dynmap=False,
             return_H=False, rf=False, rf_array=None, get_M_t=None, benchmark=False):
@@ -323,6 +345,9 @@ class GeneralSystemACE:
                     # oscillation of (at least) the first pulse.
                     _, rf_array, new_pulses = generate_rf(t=t, pulses=pulses)
                     pulses = new_pulses
+                else:
+                    if len(t) != len(rf_array):
+                        raise ValueError("rf_array length does not match time grid length: {} (rf_array) vs {} (t)".format(len(rf_array), len(t)))
                 fprop.add_Pulse((t,-0.5*hbar*rf_array), self.rf_op)
 
         # after potential RF, add pulses
@@ -388,8 +413,8 @@ class GeneralSystemACE:
                 fprop.update(get_M_t,self.dt)
                 return fprop.M
             dynmap = DynamicalMap(fprop, PT, sim, tgrid)
-            _dm = np.array(dynmap.E)
-            # _dm = dynmap.get_E()
+            #_dm = np.array(dynmap.E)
+            _dm = dynmap.get_E()
             return t, _dm
         
         if not outputs_are_strings:

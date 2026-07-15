@@ -62,7 +62,7 @@ def bdag_op(dim):
         op[i,i-1] = np.sqrt(i)
     return op
 
-def n(dim):
+def n_op(dim):
     """
     returns the number operator for a bosonic mode with dimension dim as matrix
     """

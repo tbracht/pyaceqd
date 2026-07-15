@@ -1,5 +1,5 @@
 import numpy as np
-from pyaceqd.helpers.ace_operators import ketbra, kron, id, b_op, bdag_op, n as n_op
+from pyaceqd.helpers.ace_operators import ketbra, kron, id, b_op, bdag_op, n_op
 from pyaceqd.general_system.general_system import GeneralSystemACE
 
 import pyaceqd.constants as constants
@@ -145,14 +145,14 @@ class TLSPhotonTwoSensor(GeneralSystemACE):
                  delta_s1=0, delta_s2=None, epsilon=1e-3, linewidth1=0.01, linewidth2=None,
                  ae=5, temperature=4, verbose=False, pt_file=None,
                  rho0=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="",
-                 propagate_Taylor=None):
+                 propagate_Taylor=None, n_sensor_2=2):
         n1 = n_phot + 1  # cavity Fock space dimension
         if delta_s2 is None:
             delta_s2 = delta_s1
         if linewidth2 is None:
             linewidth2 = linewidth1
         if rho0 is None:
-            rho0 = kron(ketbra(0,0,2), ketbra(0,0,n1), ketbra(0,0,2), ketbra(0,0,2))
+            rho0 = kron(ketbra(0,0,2), ketbra(0,0,n1), ketbra(0,0,2), ketbra(0,0,n_sensor_2))
 
         system_prefix = "tls_cavity_two_sensor"
 
@@ -164,31 +164,36 @@ class TLSPhotonTwoSensor(GeneralSystemACE):
         bd = bdag_op(n1)
         num = n_op(n1)
 
+        I_s2 = id(n_sensor_2)
+        b2 =b_op(n_sensor_2)
+        bd2 = bdag_op(n_sensor_2)
+        num2 = n_op(n_sensor_2)
+
         system_op = []
         # cavity detuning
-        system_op.append(delta_cx * kron(I_tls, num, I_s, I_s))
+        system_op.append(delta_cx * kron(I_tls, num, I_s, I_s2))
         # cavity coupling
-        system_op.append(cav_coupl * (kron(p_gx.T, b, I_s, I_s) + kron(p_gx, bd, I_s, I_s)))
+        system_op.append(cav_coupl * (kron(p_gx.T, b, I_s, I_s2) + kron(p_gx, bd, I_s, I_s2)))
         # sensor 1 Hamiltonian
-        system_op.append(delta_s1 * kron(I_tls, I_cav, ketbra(1,1,2), I_s))
+        system_op.append(delta_s1 * kron(I_tls, I_cav, ketbra(1,1,2), I_s2))
         # sensor 2 Hamiltonian
-        system_op.append(delta_s2 * kron(I_tls, I_cav, I_s, ketbra(1,1,2)))
+        system_op.append(delta_s2 * kron(I_tls, I_cav, I_s, num2))
         # sensor 1 coupling to cavity
-        system_op.append(epsilon * (kron(I_tls, bd, ketbra(0,1,2), I_s) + kron(I_tls, b, ketbra(1,0,2), I_s)))
+        system_op.append(epsilon * (kron(I_tls, bd, ketbra(0,1,2), I_s2) + kron(I_tls, b, ketbra(1,0,2), I_s2)))
         # sensor 2 coupling to cavity
-        system_op.append(epsilon * (kron(I_tls, bd, I_s, ketbra(0,1,2)) + kron(I_tls, b, I_s, ketbra(1,0,2))))
+        system_op.append(epsilon * (kron(I_tls, bd, I_s, b2) + kron(I_tls, b, I_s, bd2)))
 
-        lindblad_ops = [[kron(p_gx, I_cav, I_s, I_s), gamma_e]]   # TLS decay
-        lindblad_ops.append([kron(I_tls, b, I_s, I_s), cav_loss])   # cavity loss
-        lindblad_ops.append([kron(I_tls, I_cav, p_gx, I_s), linewidth1])  # sensor 1 loss
-        lindblad_ops.append([kron(I_tls, I_cav, I_s, p_gx), linewidth2])  # sensor 2 loss
+        lindblad_ops = [[kron(p_gx, I_cav, I_s, I_s2), gamma_e]]   # TLS decay
+        lindblad_ops.append([kron(I_tls, b, I_s, I_s2), cav_loss])   # cavity loss
+        lindblad_ops.append([kron(I_tls, I_cav, p_gx, I_s2), linewidth1])  # sensor 1 loss
+        lindblad_ops.append([kron(I_tls, I_cav, I_s, b2), linewidth2])  # sensor 2 loss
 
         threshold = "8"
         boson_e_max = 7
-        boson_op = kron(x, I_cav, I_s, I_s)  # phonon coupling on TLS
-        modes = {"x": kron(p_gx.T, I_cav, I_s, I_s)}  # x-polarized light drives TLS
-        rf_op = kron(x, I_cav, I_s, I_s)
-        dim_prod = [2, n1, 2, 2]
+        boson_op = kron(x, I_cav, I_s, I_s2)  # phonon coupling on TLS
+        modes = {"x": kron(p_gx.T, I_cav, I_s, I_s2)}  # x-polarized light drives TLS
+        rf_op = kron(x, I_cav, I_s, I_s2)
+        dim_prod = [2, n1, 2, n_sensor_2]
 
         super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
                          threshold=threshold, boson_e_max=boson_e_max, rho0=rho0, system_op=system_op, boson_op=boson_op, lindblad_ops=lindblad_ops,

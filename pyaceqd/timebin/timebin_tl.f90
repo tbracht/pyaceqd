@@ -302,6 +302,60 @@ subroutine four_time_8op(dm_1, dm_2, rho_init, t1, precalc_tls, n_t, dt, n_map, 
     !$omp end parallel do
 end subroutine four_time_8op
 
+! elel / lele variant: inner loop covers ALL t2 values using incremental propagation.
+! Only operators at t1 (op_et1l, op_et1r) and at t2+tb (op_lt2l, op_lt2r) are applied;
+! the middle operators (op_et2, op_lt1) are identity for the EL,EL / LE,LE case.
+! The result matrix is fully populated (n_t x n_t), not triangular.
+subroutine four_time_8op_elel(dm_1, dm_2, rho_init, t1, precalc_tls, n_t, dt, n_map, dim,&
+    op_et1l, op_et1r, op_lt2l, op_lt2r,&
+    tb, n_precalc, result)
+    use utils
+    implicit none
+    integer, intent(in) :: dim, n_t, n_map, n_precalc
+    complex(8), intent(in) :: dm_1(dim*dim, dim*dim, n_map), dm_2(dim*dim, dim*dim, n_map), precalc_tls(dim*dim, dim*dim, n_precalc)
+    complex(8), intent(in) :: rho_init(dim*dim)
+    complex(8), intent(in) :: op_et1l(dim, dim), op_et1r(dim, dim)
+    complex(8), intent(in) :: op_lt2l(dim, dim), op_lt2r(dim, dim)
+    real(8), intent(in) :: t1(0:n_t-1), dt, tb
+    complex(8), intent(out) :: result(0:n_t-1, 0:n_t-1)
+
+    ! Locals
+    integer :: j, i, l
+    complex(8) :: rho_vec(dim*dim), rho_t1(dim*dim), rho_t2(dim*dim)
+    complex(8) :: rho_mtx(dim, dim)
+    real(8) :: t1_now, t2_now, t2_next
+
+    result = (0.0d0, 0.0d0)
+
+    ! outer loop over t1 is parallelized; inner j loop is sequential (incremental propagation)
+    !$omp parallel do private(i, j, l, t1_now, t2_now, t2_next, rho_vec, rho_t1, rho_t2, rho_mtx)
+    do i=0, n_t-1
+        t1_now = t1(i)
+        ! propagate rho_init to t1 using dm_1
+        rho_vec = propagate_tb(0.0d0, t1_now, dt, rho_init, dm_1, precalc_tls, n_precalc, dim*dim, n_map)
+        ! apply t1 operators from right and left
+        rho_t1 = apply_right(rho_vec, op_et1r, dim)
+        rho_t1 = apply_left(rho_t1, op_et1l, dim)
+        ! propagate from t1 to tb (rest of first timebin)
+        rho_t1 = propagate_tb(t1_now, tb, dt, rho_t1, dm_1, precalc_tls, n_precalc, dim*dim, n_map)
+        ! incremental loop over t2 in second timebin
+        t2_now = t1(0)
+        do j=0, n_t-1
+            t2_next = t1(j)
+            ! propagate incrementally from t2_now to t2_next using dm_2
+            rho_t1 = propagate_tb(t2_now, t2_next, dt, rho_t1, dm_2, precalc_tls, n_precalc, dim*dim, n_map)
+            ! apply t2+tb operators non-destructively (copy to rho_t2 first)
+            rho_t2 = apply_right(rho_t1, op_lt2r, dim)
+            rho_t2 = apply_left(rho_t2, op_lt2l, dim)
+            ! trace
+            rho_mtx = reshape(rho_t2, [dim, dim])
+            result(i, j) = sum([(rho_mtx(l,l), l=1,dim)])
+            t2_now = t2_next
+        end do
+    end do
+    !$omp end parallel do
+end subroutine four_time_8op_elel
+
 subroutine dynamics_t1(dm_1, dm_2, rho_init, t1, precalc_tls, n_t, dt, n_map, dim,&
     tb, n_precalc, result)
     use utils

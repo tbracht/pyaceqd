@@ -56,7 +56,7 @@ class TimeBin():
         pulses_tb1 = []
         pulses_tb2 = []
         for __pulse in self.pulses:
-            if __pulse.t0 < self.tb:
+            if __pulse.t_center < self.tb:
                 pulses_tb1.append(__pulse)
             else:
                 pulses_tb2.append(__pulse)

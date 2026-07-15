@@ -63,6 +63,13 @@ class Indistinguishability:
             self.max_pulse_t = get_max_pulse_t(pulses)
         # print("Max pulse time for purity calculation: ", self.max_pulse_t)
 
+        for _p in pulses:
+            if _p.repeat_tb is None:
+                print("WARNING: pulse repeat_tb is None, but tb is set to {}. Setting repeat_tb to tb".format(tb))
+                _p.set_repeat_tb(tb)
+            if _p.repeat_tb != tb:
+                print("Pulse repeat_tb is {}, but tb is set to {}. This might not be what you want.".format(_p.repeat_tb, tb))
+
         self.tl_map = None
         self.tl_dms = None
         self.t_mem = t_mem  # memory time for phonon dynamics with time-local maps
@@ -120,12 +127,21 @@ class Indistinguishability:
             t_end = (self.factor_t + self.factor_tau + 1)*self.tb
         return self.system.run(0, t_end, *self.pulses, output_ops=output_ops)
 
-    def G2(self, return_whole=False, tqdm_options={}):
-        sigma_left = {"operator": self.sigma_x, "applyFrom": "left", "applyBefore":False}
-        sigma_right = {"operator": self.sigma_xdag, "applyFrom": "right", "applyBefore":False}
+    def G2(self, return_whole=False, tqdm_options={}, opA=None, opB=None, opC=None):
+        if opA is None or opB is None or opC is None:
+            opA = self.sigma_xdag
+            opB = self.sigma_xdag @ self.sigma_x
+            opC = self.sigma_x
+        # sigma_left = {"operator": self.sigma_x, "applyFrom": "left", "applyBefore":False}
+        # sigma_right = {"operator": self.sigma_xdag, "applyFrom": "right", "applyBefore":False}
         
-        out_op1 = self.sigma_xdag @ self.sigma_x
-        out_op_tau0 = self.sigma_xdag @ self.sigma_xdag @ self.sigma_x @ self.sigma_x
+        # out_op1 = self.sigma_xdag @ self.sigma_x
+        # out_op_tau0 = self.sigma_xdag @ self.sigma_xdag @ self.sigma_x @ self.sigma_x
+        sigma_left = {"operator": opC, "applyFrom": "left", "applyBefore":False}
+        sigma_right = {"operator": opA, "applyFrom": "right", "applyBefore":False}
+                
+        out_op1 = opB
+        out_op_tau0 = opA @ opB @ opC
         output_ops = [out_op1, out_op_tau0]
         t1 = self.t1
         factor_t = self.factor_t
@@ -161,7 +177,7 @@ class Indistinguishability:
         G2 = np.trapezoid(_G2, t_axis_complete, axis=0)
         return t2, G2
     
-    def calc_purity(self):
+    def calc_purity(self, opA=None, opB=None, opC=None):
         if self.use_dm:
             if self.system.phonons:
                 print("Calculating with phonons")
@@ -169,7 +185,7 @@ class Indistinguishability:
             else:
                 t,g2 = self.G2_tl()
         else:
-            t,g2 = self.G2()
+            t,g2 = self.G2(opA=opA, opB=opB, opC=opC)
         dt = self.dt
         tb = self.tb
         n_1 = int(0.5*tb/dt)

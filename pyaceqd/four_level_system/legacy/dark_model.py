@@ -11,7 +11,8 @@ temp_dir = constants.temp_dir
 hbar = constants.hbar  # meV*ps
 
 def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=3.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
-               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", gamma_d=None):
+               multitime_op=None, pulse_file_x=None, pulse_file_y=None, prepare_only=False, output_ops=["|0><0|_4","|1><1|_4","|2><2|_4","|3><3|_4"], initial="|0><0|_4", gamma_d=None,
+               calc_dynmap=False):
     system_prefix = "darkmodel_"
     # |0> = G, |1> = X, |2> = D, |3> = B
     system_op = ["{}*|3><3|_4".format(-delta_b),"{}*|2><2|_4".format(-delta_xd)]
@@ -30,7 +31,8 @@ def darkmodel(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/
     
     result = system_ace_stream(t_start, t_end, *pulses, dt=dt, phonons=phonons, t_mem=20.48, ae=ae, temperature=temperature, verbose=verbose, temp_dir=temp_dir, pt_file=pt_file, suffix=suffix, \
                   multitime_op=multitime_op, system_prefix=system_prefix, threshold="10", threshold_ratio="0.3", buffer_blocksize="-1", dict_zero="16", precision="12", boson_e_max=7,
-                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only)
+                  system_op=system_op, pulse_file_x=pulse_file_x, pulse_file_y=pulse_file_y, boson_op=boson_op, initial=initial, lindblad_ops=lindblad_ops, interaction_ops=interaction_ops, output_ops=output_ops, prepare_only=prepare_only,
+                  calc_dynmap=calc_dynmap)
     return result
 
 def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_e=1/100, gamma_b=None, phonons=False, ae=5.0, temperature=4, verbose=False, lindblad=False, temp_dir=temp_dir, pt_file=None, suffix="", \
@@ -46,8 +48,8 @@ def darkmodel_new(t_start, t_end, *pulses, dt=0.5, delta_xd=0, delta_b=4, gamma_
         if gamma_b is None:
             gamma_b = gamma_e
         lindblad_ops = [["|0><1|_5",gamma_e],["|0><2|_5",gamma_e],["|1><4|_5",gamma_b],["|2><4|_5",gamma_b]]  #  |2> is dark, does not decay 
-        if gamma_d is not None:
-            lindblad_ops.append(["|0><3|_5", gamma_d])  # dark state decay
+        # if gamma_d is not None:
+        #     lindblad_ops.append(["|0><3|_5", gamma_d])  # dark state decay
     # we use 'x'-polar for coupling between G, X and B, while 'y'-polar couples G, D and B
     # Y can only be accessed by radiative decay from B
     interaction_ops = [["|1><0|_5","x"],["|4><1|_5","x"],["|3><0|_5","y"],["|4><3|_5","y"]]
