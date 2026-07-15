@@ -1142,17 +1142,17 @@ class PulseGenerator:
         return self.time, self.temporal_representation_x, self.temporal_representation_y
 
     def generate_phase_difference(self,temp_dir = '', file_name = 'phase_diff', suffix = ''):
-        phase_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
-        phase_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
+        # phase_file_x = temp_dir + file_name + str(suffix)+'_x.dat' 
+        # phase_file_y = temp_dir + file_name + str(suffix)+'_y.dat'
 
         
         phase_grad_x = -np.gradient(np.unwrap((np.angle(self.temporal_representation_x))),self.time)  
         phase_grad_y = -np.gradient(np.unwrap((np.angle(self.temporal_representation_y))),self.time)
         
-        export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
-        export_csv(phase_file_y, self.time, np.real(phase_grad_y),np.imag(phase_grad_y), precision=8, delimit=' ')  
+        # export_csv(phase_file_x, self.time, np.real(phase_grad_x),np.imag(phase_grad_x), precision=8, delimit=' ')
+        # export_csv(phase_file_y, self.time, np.real(phase_grad_y),np.imag(phase_grad_y), precision=8, delimit=' ')  
 
-        return phase_file_x, phase_file_y
+        return phase_grad_x, phase_grad_y
 
     def generate_field_functions(self, interpolation = 'linear'):
         #generate a function that can be used by qutip (ect) and interpolates accordingly 
