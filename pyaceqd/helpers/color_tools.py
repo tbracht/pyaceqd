@@ -12,8 +12,9 @@ def select_equally_spaced_colors(n):
     colors = []
     hue_values = [i / n for i in range(n)]  # Equally spaced hue values
     # using HLS color space: L is lightness, S is saturation. L=0.5 and S=1.0 for bright colors
+    # Use a slightly muted HLS palette so the colors stay readable in plots.
     for hue in hue_values:
-        rgb = colorsys.hls_to_rgb(h=hue, l=0.5, s=1.0)  # Convert HSL to RGB. Also see https://en.wikipedia.org/wiki/HSL_and_HSV
+        rgb = colorsys.hls_to_rgb(h=hue, l=0.58, s=0.78)  # Convert HSL to RGB. Also see https://en.wikipedia.org/wiki/HSL_and_HSV
         hex_code = "#{:02X}{:02X}{:02X}".format(*[int(255 * c) for c in rgb])  # Convert RGB to hexadecimal color code
         colors.append(hex_code)
     return colors

@@ -1,6 +1,6 @@
 from pyaceqd.general_system.general_system import GeneralSystemACE
 import pyaceqd.constants as constants
-from pyaceqd.helpers.ace_operators import ketbra, kron, id, b_op, bdag_op, n, zeros
+from pyaceqd.helpers.ace_operators import ketbra, kron, id, b_op, bdag_op, n_op, zeros
 from pyaceqd.helpers.reduce_dimension import get_remove_indices, remove_dim_numbers, get_union_indices, filter_n_excitations
 import numpy as np
 hbar = constants.hbar  # meV*ps
@@ -143,8 +143,8 @@ class BiexcitonPhotons(GeneralSystemACE):
         lindblad_ops.append([kron(i4,id(n1),b_op(n2)), cav_loss])
         # cavity-qd coupling
         # cavity energy/detuning
-        system_op.append(delta_cx*kron(i4,n(n1),id(n2)))
-        system_op.append(delta_cx*kron(i4,id(n1),n(n2)))
+        system_op.append(delta_cx*kron(i4,n_op(n1),id(n2)))
+        system_op.append(delta_cx*kron(i4,id(n1),n_op(n2)))
         # X-cavity
         system_op.append(cav_coupl * ( kron(p_gx.T,b_op(n1),id(n2)) + kron(p_gx,bdag_op(n1),id(n2))))  # |1><0| otimes b + h.c.
         system_op.append(cav_coupl * ( kron(p_xb.T,b_op(n1),id(n2)) + kron(p_xb,bdag_op(n1),id(n2))))  # |3><1| otimes b + h.c.
@@ -173,8 +173,8 @@ class BiexcitonPhotonsReduced(GeneralSystemACE):
 
         if max_excitations is not None:
             n_system = x + y + 2*b  # operator that counts the number of excitations in the system
-            n_photons1 = n(n1)  # operator that counts the number of photons in cavity 1
-            n_photons2 = n(n2)  # operator that counts the number of photons in cavity 2
+            n_photons1 = n_op(n1)  # operator that counts the number of photons in cavity 1
+            n_photons2 = n_op(n2)  # operator that counts the number of photons in cavity 2
             total_excitations = kron(n_system,id(n1),id(n1)) + kron(id(4),n_photons1,id(n2)) + kron(id(4),id(n1),n_photons2)  # total number of excitations in the system
             _remove = filter_n_excitations(total_excitations, max_excitations)
             states_to_remove = get_union_indices(states_to_remove, _remove)  # get indices of states to remove based on max_excitations
@@ -215,8 +215,8 @@ class BiexcitonPhotonsReduced(GeneralSystemACE):
         lindblad_ops.append([kron(i4,id(n1),b_op(n2)), cav_loss])
         # cavity-qd coupling
         # cavity energy/detuning
-        system_op.append(delta_cx*kron(i4,n(n1),id(n2)))
-        system_op.append(delta_cx*kron(i4,id(n1),n(n2)))
+        system_op.append(delta_cx*kron(i4,n_op(n1),id(n2)))
+        system_op.append(delta_cx*kron(i4,id(n1),n_op(n2)))
         # X-cavity
         system_op.append(cav_coupl *  (kron(p_gx.T,b_op(n1),id(n2)) + kron(p_gx,bdag_op(n1),id(n2))))  # |1><0| otimes b + h.c.
         system_op.append(cav_coupl *  (kron(p_xb.T,b_op(n1),id(n2)) + kron(p_xb,bdag_op(n1),id(n2))))  # |3><1| otimes b + h.c.
@@ -312,7 +312,7 @@ class BiexcitonFourSensors(GeneralSystemACE):
 class BiexcitonPhotonsSensor(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, n_phot1=2, n_phot2=2, gamma_b=None, delta_xy=0, delta_b=4, shift_x=True, phonons=False, ae=5, temperature=4, verbose=False, pt_file=None,
              rho0=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", propagate_Taylor=None, cav_coupl=0.06, cav_loss=0.12/hbar, delta_cx=-2, remove_states=None,
-             max_excitations=None, sensor_detunings=[0,0], sensor_linewidths=[0.01,0.01], epsilon=1e-3, n_sensor_2=2):
+             max_excitations=None, sensor_detunings=[0,0], sensor_linewidths=[0.01,0.01], epsilon=1e-3, n_sensor_2=2, remove_sensor_states=False):
         n1 = n_phot1 + 1
         n2 = n_phot2 + 1
         states_to_remove = []
@@ -322,9 +322,13 @@ class BiexcitonPhotonsSensor(GeneralSystemACE):
         if max_excitations is not None:
             # sensors dont contribute to excitation number
             n_system = x + y + 2*b  # operator that counts the number of excitations in the system
-            n_photons1 = n(n1)  # operator that counts the number of photons in cavity 1
-            n_photons2 = n(n2)  # operator that counts the number of photons in cavity 2
+            n_photons1 = n_op(n1)  # operator that counts the number of photons in cavity 1
+            n_photons2 = n_op(n2)  # operator that counts the number of photons in cavity 2
             total_excitations = kron(n_system,id(n1),id(n1),id(2),id(n_sensor_2)) + kron(id(4),n_photons1,id(n2),id(2),id(n_sensor_2)) + kron(id(4),id(n1),n_photons2,id(2),id(n_sensor_2))  # total number of excitations in the system
+            if remove_sensor_states:
+                n_sensor_1 = n_op(2)  # operator that counts the number of excitations in sensor 1
+                n_sensor_2_op = n_op(n_sensor_2)  # operator that counts the number of excitations in sensor 2
+                total_excitations += kron(id(4),id(n1),id(n2),n_sensor_1,id(n_sensor_2)) + kron(id(4),id(n1),id(n2),id(2),n_sensor_2_op)  # add sensor excitations to total excitations
             _remove = filter_n_excitations(total_excitations, max_excitations)
             states_to_remove = get_union_indices(states_to_remove, _remove)  # get indices of states to remove based on max_excitations
         
@@ -375,8 +379,8 @@ class BiexcitonPhotonsSensor(GeneralSystemACE):
             lindblad_ops.append([kron(i4,id(n1),id(n2),id(2),p_s), sensor_linewidths[1]])
         # cavity-qd coupling
         # cavity energy/detuning
-        system_op.append(delta_cx*kron(i4,n(n1),id(n2),id(2),id(n_sensor_2)))
-        system_op.append(delta_cx*kron(i4,id(n1),n(n2),id(2),id(n_sensor_2)))
+        system_op.append(delta_cx*kron(i4,n_op(n1),id(n2),id(2),id(n_sensor_2)))
+        system_op.append(delta_cx*kron(i4,id(n1),n_op(n2),id(2),id(n_sensor_2)))
         # X-cavity
         system_op.append(cav_coupl *  (kron(p_gx.T,b_op(n1),id(n2),id(2),id(n_sensor_2)) + kron(p_gx,bdag_op(n1),id(n2),id(2),id(n_sensor_2))))  # |1><0| otimes b + h.c.
         system_op.append(cav_coupl *  (kron(p_xb.T,b_op(n1),id(n2),id(2),id(n_sensor_2)) + kron(p_xb,bdag_op(n1),id(n2),id(2),id(n_sensor_2))))  # |3><1| otimes b + h.c.

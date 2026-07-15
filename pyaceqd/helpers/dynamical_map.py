@@ -227,12 +227,12 @@ def use_tl_map_mto(tl_map, dm_1, dm_2, times, rho0, t_MTO, debug=False):
     return rho.reshape(len(times),n,n)
 
 def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25, check_against_i=None):
-    norms_tl = np.zeros((len(times)-3),dtype=float)
+    norms_tl_diff = np.zeros((len(times)-3),dtype=float)
     for i in range(len(times)-3):
         if check_against_i is not None:
-            norms_tl[i] = np.linalg.norm(tl_map[i]-tl_map[check_against_i])
+            norms_tl_diff[i] = np.linalg.norm(tl_map[i]-tl_map[check_against_i])
         else:
-            norms_tl[i] = np.linalg.norm(tl_map[i]-tl_map[i+1])
+            norms_tl_diff[i] = np.linalg.norm(tl_map[i]-tl_map[i+1])
     # relevant indices: 
     #print("len(times): ", len(times))
     #print("len(norms_tl): ", len(norms_tl))
@@ -245,7 +245,7 @@ def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25,
     plt.ylabel("Norm")
     plt.title("difference of adjacent dynamical maps")
     # plt.plot(times[1:-2]-times[0], norms_tl)
-    plt.plot(times[ix]-times[0], norms_tl[ix-1])
+    plt.plot(times[ix]-times[0], norms_tl_diff[ix-1])
     # plt.legend(loc="upper right")
     # plt.xlim(1000,1150)
     # plt.ylim(0.8*np.min(norms_tl),1.2*np.max(norms_tl))
@@ -290,10 +290,12 @@ def check_tlmap_frobenius(tl_map, times, filename="dynmap_tl_frobenius",xlim=25,
     plt.legend()
     plt.savefig(filename+"_sv.png")
     plt.clf()
+    return times[ix]-times[0], norms_tl_diff[ix-1]
 
 def reorder_C(E_all):
     """
     E_all has shape (nt, d^2, d^2).
+    returns Choi matrix with shape (nt, d^2, d^2) but with entries reordered from (ij,kl) to (ik,jl).
     """
     nt, d2, _ = E_all.shape
     d = int(np.sqrt(d2))

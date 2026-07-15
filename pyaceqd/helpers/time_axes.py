@@ -85,7 +85,7 @@ def get_gaussian_t(t0,tend,*pulses,dt_max=1.0,dt_min=0.01,interval_per_step=0.05
     counter = 0
     n_max = int(dt_max/dt_min)
     interval_contains = 0
-    intfunc = lambda t: np.sum([p.get_integral(t) for p in pulses])
+    intfunc = lambda t: np.sum([p.get_integral(t) for p in pulses])  # integral from -infty to t of pulses
     for i in range(1,len(t_test)):
         t_now = t_test[i]
         t_prev = t_test[i-1]

@@ -129,7 +129,7 @@ class Spectrum:
 
         time_generator = UnregularTimeAxis(0, tend, self.max_pulse_t + self.t_mem,
                                            dt_small=dt_small, dt_big=dt_big, pulses=pulses,
-                                           factor_tau=1, include_tend=add_tend, round_dt=True)
+                                           include_tend=add_tend, round_dt=True)
         self.t1 = time_generator.time_axis_two_step(exponential_part=exponential_stepping)
         if variable_stepping:
             self.t1 = time_generator.time_axis_variable(exponential_part=exponential_stepping,
@@ -404,9 +404,26 @@ class Spectrum:
         return np.fft.fftshift(fft_freqs), spectrum, spectra
 
     
-    def get_onesided_spectrum(self, save_g1_dir=None, load=None, dm=True, timeit=False, e_min=-10, e_max=10, n_e=1000):
+    def get_onesided_spectrum(self, e_min=-10, e_max=10, n_e=1000, save_g1_dir=None, load=None, dm=True, timeit=False):
         """
         Calculates the spectrum via G1: <sigma_xdag(t1+tau) sigma_x(t1)>
+        Return S(omega) = Re(int_0^infinity dtau exp(-i omega tau) int_0^infinity dt G1(t, tau))
+        
+        Parameters
+        ----------
+
+        e_min, e_max: float, energy range for the spectrum in meV
+        n_e: int, number of energy points in the spectrum
+        save_g1_dir: str or None, if not None, save the computed G1 to this directory as g1.npy, t_axis.npy, tau_axis.npy
+        load: str or None, if not None, load G1 from this directory instead of computing. Expects g1.npy, t_axis.npy, tau_axis.npy in this directory.
+        dm: bool, whether to use the time-local accelerated G1 calculation (True) or the direct G1 calculation (False
+        timeit: bool, whether to time the spectrum calculation and print the time taken
+        
+        Returns
+        -------
+
+        energies: np.ndarray, shape (n_e,), energy axis for the spectrum
+        spectrum: np.ndarray, shape (n_e,), the computed spectrum S(omega)
         """
         if load is not None and os.path.exists(load + "g1.npy"):
             t_axis = np.load(load + "t_axis.npy")
