@@ -33,16 +33,12 @@ def _require_timebin_tl() -> None:
             "Reinstall with Fortran build enabled to use time-local accelerated routines."
         ) from _TIMEBIN_TL_IMPORT_ERROR
 
-# exemplary options-dict:
-options_example = {"verbose": False, "delta_xd": 4, "gamma_e": 1/65, "lindblad": True,
- "temp_dir": temp_dir, "phonons": False, "pt_file": "tls_dark_3.0nm_4k_th10_tmem20.48_dt0.02.ptr"}
-
 class TwoPhotonTimebin:
     def __init__(self, system, sigma_x, sigma_b, *pulses, 
                  tb=800, t_mem=10, dt_small=0.1,
                  regular_stepping=False, variable_stepping=False, 
                  exponential_stepping=False, max_pulse_t=None, verbose=False, workers=15,
-                 dt_big=None, add_tend=True, use_dm=True, sigma_xdag=None, sigma_bdag=None):
+                 dt_big=None, use_dm=True, sigma_xdag=None, sigma_bdag=None):
         self.pulses = pulses
         self.system = system
         self.gamma_e = system.gamma_e
@@ -758,6 +754,8 @@ class TwoPhotonTimebin:
             else:
                 p2 = _p.copy()
                 p2.set_tcenter(_p.get_tcenter() - self.tb)
+                if hasattr(p2, "set_tquench"):
+                    p2.set_tquench(_p.get_tquench() - self.tb)
                 pulses2.append(p2)
 
         if len(pulses1) == 0 or len(pulses2) == 0:

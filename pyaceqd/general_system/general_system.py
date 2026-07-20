@@ -143,7 +143,7 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
 class GeneralSystemACE:
     def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7,
                  system_op=None, boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
-                 colors=None, propagate_Taylor=None, rho0=None, expand_pt=None):
+                 colors=None, propagate_Taylor=None, rho0=None, expand_pt=None, propagate_Taylor_threshold=1e-8):
         """
         ACE: separate calculation for the process tensor, which can be used to simulate long time scales with interaction to the environment.
         """
@@ -155,7 +155,9 @@ class GeneralSystemACE:
         if propagate_Taylor is not None:
             if verbose:
                 print("Using {}-th order Taylor expansion for propagation".format(propagate_Taylor))
+                print("Using Taylor expansion threshold: {}".format(propagate_Taylor_threshold))
             self.plist_base += ["propagate_Taylor {}".format(propagate_Taylor)]  # massive speedup for systems with hilbert space dims larger than around 8
+            self.plist_base += ["propagate_Taylor_threshold {}".format(propagate_Taylor_threshold)]
         
         self.dt = dt
         self.lindblad = lindblad

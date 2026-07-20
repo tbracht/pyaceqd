@@ -199,7 +199,7 @@ class QuenchedChirpedPulse(ChirpedPulse):
     def __init__(self, tau_0, detuning, alpha=0, t_center=0, pulse_area=1*np.pi, t_quench=0, polar_x=1, phase=0, polars=None, polarization=None, interaction_op=None, **pulse_kwargs):
         self.t_quench = t_quench
         if pulse_kwargs.get("repeat_tb", None) is not None:
-            raise UserWarning("WARNING: repeat_tb is not compatible with QuenchedChirpedPulse")
+            print("WARNING: repeat_tb is not compatible with QuenchedChirpedPulse")
         super().__init__(tau_0, detuning, alpha, t_center, pulse_area, polar_x, phase, polars, polarization, interaction_op, **pulse_kwargs)
     
     def get_envelope(self, t):
@@ -212,6 +212,12 @@ class QuenchedChirpedPulse(ChirpedPulse):
             return super().get_integral(t)
         else:
             return super().get_integral(self.t_quench)
+
+    def get_tquench(self):
+        return self.t_quench
+
+    def set_tquench(self, t_quench):
+        self.t_quench = t_quench
     
     def copy(self):
         return QuenchedChirpedPulse(self.tau_0, self.detuning, self.alpha, t_quench=self.t_quench, polars=None, **self._base_kwargs())
