@@ -1,0 +1,10 @@
+{
+  "_comment": "to be used with vscode so the pyaceqd package is recognized if installed in editable mode. Make folder .vscode in your working directory and put this in as settings.json. Adjust paths accordingly." ,
+  "python.analysis.extraPaths": [
+    "/home/thomas/Documents/pyaceqd"
+  ],
+  "python.autoComplete.extraPaths": [
+    "/home/thomas/Documents/pyaceqd"
+  ],
+  "python.analysis.indexing": true
+}

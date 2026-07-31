@@ -4,6 +4,7 @@ requires = [
     "meson>=1.2",
     "ninja",
     "numpy>=1.20",
+    "nanobind",
 ]
 build-backend = "mesonpy"
 
