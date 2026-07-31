@@ -179,11 +179,15 @@ class GeneralSystemACE:
             # parameters for process tensor calculation
             if boson_op is None:
                 raise ValueError("boson_op must be provided when phonons=True")
+            # if no pt_dir was explicitly given, fall back to the globally configured default
+            # (see pyaceqd.set_pt_dir()/pyaceqd.constants.pt_dir), resolved at call time
+            if not pt_dir:  # note that "" is False so in this case we check if a pt_dir was set using constants.set_pt_dir()
+                pt_dir = constants.get_pt_dir()
             self.pt_file = pt_file
             if self.pt_file is not None:
                 self.pt_file = os.path.join(pt_dir, self.pt_file)
             if self.pt_file is None:
-                self.pt_file = _get_pt_name(pt_dir+system_prefix, ae, temperature, threshold, dt, J_file, factor_ah)
+                self.pt_file = os.path.join(pt_dir, _get_pt_name(system_prefix, ae, temperature, threshold, dt, J_file, factor_ah))
             if verbose and os.path.exists(self.pt_file+"_initial") and J_to_file is None:
                 print("using pt_file " + self.pt_file)
             # try to detect pt_file, else calculate it
