@@ -62,3 +62,11 @@ def get_union(arr_x1, arr_x2, arr_z1, arr_z2, axis_z=None):
     arr_x, indices = np.unique(arr_x, return_index=True)
     arr_z = arr_z[indices]
     return arr_x, arr_z
+
+def complement_array(arr_input, arr_to_remove):
+    # returns the complement of arr_input with respect to arr_to_remove
+    # i.e. returns the elements in arr_input that are not in arr_to_remove
+    arr_input_set = set(arr_input)
+    arr_to_remove_set = set(arr_to_remove)
+    arr_complement = arr_input_set - arr_to_remove_set
+    return np.array(sorted(arr_complement))

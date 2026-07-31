@@ -492,7 +492,7 @@ class Spectrum:
             plt.savefig(filename+"_tend.png")
         return omega_axis, t_axis, S_omega_t
 
-    def get_time_dependent_spectrum(self, tend, omega_min=-5, omega_max=5, domega=0.1):
+    def get_time_dependent_spectrum(self, tend, omega_min=-5, omega_max=5, domega=0.1, tl=False):
         """
         Compute S(omega, t) = Re(int_0^t dt' int_0^{t-t'} dtau G1(t',tau) exp(-i omega tau))
         on a regular time grid matching n*dt.
@@ -502,7 +502,10 @@ class Spectrum:
         n_t = int(tend / _dt)
         t_axis = np.linspace(0, tend, n_t + 1)
         self.t1 = t_axis
-        t_axis, tau_axis, g1 = self.G1_tl()
+        if tl:
+            t_axis, tau_axis, g1 = self.G1_tl()
+        else:
+            t_axis, tau_axis, g1 = self.G1()
         tau_axis = tau_axis[::int(_dt / self.dt)]
         g1 = g1[:, ::int(_dt / self.dt)]
         _omega_max = np.abs(omega_max) + np.abs(omega_min)
@@ -515,5 +518,8 @@ class Spectrum:
         plt.xlabel("Frequency (meV)")
         plt.ylabel("Time (ps)")
         plt.colorbar(label="log(S(omega,t))")
-        plt.savefig("time_dep_spectrum.png")
+        if tl:
+            plt.savefig("time_dep_spectrum_tl.png")
+        else:
+            plt.savefig("time_dep_spectrum.png")
         return S_omega_t

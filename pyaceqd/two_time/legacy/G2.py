@@ -1,9 +1,8 @@
+from time import time
 import numpy as np
 import os
-import warnings
-from pyaceqd.tools import concurrence
-from pyaceqd.helpers.time_axes import round_to_dt, UnregularTimeAxis
-from pyaceqd.helpers.dynamical_map import calc_tl_dynmap_pseudo, extract_dms
+from pyaceqd.tools import export_csv, construct_t, concurrence, simple_t_gaussian, round_to_dt, calc_tl_dynmap_pseudo, extract_dms, op_to_matrix
+from pyaceqd.helpers.dynamical_map import check_tlmap_frobenius
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
 import matplotlib.pyplot as plt
@@ -11,129 +10,146 @@ from pyaceqd.constants import hbar
 import pyaceqd.constants as constants
 try:
     from pyaceqd.two_time import propagate_tau_module
-except ImportError as exc:
-    _PROPAGATE_TAU_TL_IMPORT_ERROR = exc
-    warnings.warn("propagate_tau_module not found, time-local acceleration unavailable.",
-                  ImportWarning,
-                  stacklevel=2,)
+except ImportError:
+    print("WARNING: propagate_tau_module not found, using pure python implementation for G2 and G1 calculations.")
     propagate_tau_module = None
 temp_dir = constants.temp_dir
 
-
-def _require_propagate_tau_tl() -> None:
-    if propagate_tau_module is None:
-        raise RuntimeError(
-            "The optional Fortran module 'propagate_tau_module' is not available. "
-            "Reinstall with Fortran build enabled to use time-local accelerated routines."
-        ) from _PROPAGATE_TAU_TL_IMPORT_ERROR
-
-def get_max_pulse_t(pulses):
-    times = []
-    for p in pulses:
-        times.append(p.t_center + 4*p.tau)
-    if len(times) == 0:
-        return 0
-    return max(times)
-
-
-class PolarizationEntanglement():
-    def __init__(self, system, sigma_x, sigma_y, *pulses, tend=800, 
-                 dt_small=0.1, max_pulse_t=None, workers=2, t_mem=10,
-                 dt_big=None, regular_stepping=False,
-                 variable_stepping=False, exponential_stepping=False, verbose=False) -> None:
+class PolarizatzionEntanglement():
+    def __init__(self, system, sigma_x, sigma_y, sigma_xdag, sigma_ydag, *pulses, dt=0.1, tend=400, 
+                 time_intervals=None, simple_exp=True, dt_small=0.1, gaussian_t=None, regular_grid=False,
+                 verbose=False, workers=2, remove_files=True, factor_tau=4, t_mem=10, options={}) -> None:
         """
         Parameters
         ----------
         system : System
             System that is used for the simulation
         sigma_x : str
-            transition operator for x-polarization
+            Polarization operator for x
         sigma_y : str
-            transition operator for y-polarization
+            Polarization operator for y
+        sigma_xdag : str
+            Conjugate of the polarization operator for x
+        sigma_ydag : str
+            Conjugate of the polarization operator for y
         pulses : list of Pulses
             Pulses that are used for the simulation
-        tend : float
-            final time for t and tau. This means that maximal simulation time is 2*tend for t=tend and tau=tend 
+        dt : float, optional
+            Timestep during simulation
+        tend : float, optional
+            Timebin width
+        time_intervals : list of float, optional
+            Time intervals for the simulation
+        simple_exp : bool, optional
+            Use exponential timestepping
         dt_small : float, optional
-            Small timestep for the correlations
-        max_pulse_t : float, optional
+            Small timestep for the simulation
+        gaussian_t : float, optional
             Gaussian timestep for the simulation
-        workers : int, optional
-            Number of threads spawned by ThreadPoolExecutor
-        t_mem : float, optional
-            Memory time for phonon dynamics, used to calculate time-local maps
-        dt_big : float, optional
-            Big timestep for the simulation, used for times where no pulse is present. If None, it is set to 10*dt_small
-        regular_stepping : bool, optional
+        regular_grid : bool, optional
             If True, use a regular t-grid with spacing dt_small,
-            disregarding settings for variable stepping and exponential stepping
-        variable_stepping : bool, optional
-            If True, use variable stepping with dt_big for large times, and dt_small for small times
-        exponential_stepping : bool, optional
-            If True, use exponential stepping for the t-grid, with dt_small for small times and exponentially increasing step size for larger times
+            disregarding settings for gaussian_t and simple_exp
         verbose : bool, optional
             Verbose output
+        workers : int, optional
+            Number of threads spawned by ThreadPoolExecutor
+        remove_files : bool, optional
+            Remove temporary files after simulation
+        options : dict, optional
+            Additional options for the simulation
         """
         self.system = system  # system that is used for the simulation
-        self.dt = system.dt  # timestep during simulation
-        self.tend = tend  # final time t for the simulation
+        self.dt = dt  # timestep during simulation
+        self.options = dict(options)
+        self.options["dt"] = dt  # also save it in the options dict
+        self.tend = tend  # timebin width
+        self.remove_files = remove_files
+        self.simple_exp = simple_exp  # use exponential timestepping
+        self.gaussian_t = gaussian_t  # use gaussian timestepping during pulse
         self.pulses = pulses
         self.t_mem = t_mem  # memory time for phonon dynamics
         self.workers = workers  # number of threads spawned by ThreadPoolExecutor
-        self.verbose = verbose
-        self.dim = system.dim
-        self.phonons = system.phonons
-        if not system.lindblad:
-            print("WARNING: system is not using lindblad operators, eg. no decay.")
-        self.ax = sigma_x
-        self.ay = sigma_y
-        self.axdag = np.conjugate(sigma_x.T)
-        self.aydag = np.conjugate(sigma_y.T)
-        if sigma_x.shape != (self.dim, self.dim) or sigma_y.shape != (self.dim, self.dim):
-            print("Operator dimension mismatch: expected shape ({dim}, {dim}), got sigmax: {sigma_x.shape}, sigmay: {sigma_y.shape}")
-            raise ValueError("Operators must have shape (dim, dim), where dim is the dimension of the system.")
+        self.ax = "(" + sigma_x + ")"
+        self.ay = "(" + sigma_y + ")"
+        self.axdag = "(" + sigma_xdag + ")"
+        self.aydag = "(" + sigma_ydag + ")"
         self.tl_map = None  # time-local dynamical map
+        try:
+            self.temp_dir = options["temp_dir"]
+        except KeyError:
+            print("temp_dir not included in options, setting to temp_dir specified in constants")
+            self.options["temp_dir"] = temp_dir
+            self.temp_dir = self.options["temp_dir"]
 
-        # construct time grid
-        if max_pulse_t is None:
-            print("Warning: max_pulse_t is not set. Default is t_center+4*tau of the last pulse.")
-            max_pulse_t = get_max_pulse_t(pulses)
-        self.max_pulse_t = max_pulse_t
+        if "pulse_file_x" in self.options or "pulse_file_y" in self.options and self.options["pulse_file_x"] is not None and self.options["pulse_file_y"] is not None:
+            self.remove_files = False
+        else:
+            self.prepare_pulsefile(verbose=verbose)
+            self.options["pulse_file_x"] = self.pulse_file_x  # put pulse files in options dict
+            self.options["pulse_file_y"] = self.pulse_file_y
+
+        self.gamma_e = options["gamma_e"]
         
-        self.dt_big = dt_big
-        if self.dt_big is None:
-            self.dt_big = 10*dt_small
-        self.dt_small = dt_small
+        # make time grid
+        if regular_grid:
+            # regular grid with spacing dt_small
+            self.t1 = np.arange(0, self.tend + dt_small, dt_small)
+        elif time_intervals is not None:
+            if len(time_intervals) != 2:
+                return ValueError("time_intervals must be a list of length 2")
+            ts = []
+            ts.append(np.arange(0,time_intervals[0],dt_small))
+            ts.append(np.arange(time_intervals[0],time_intervals[1],10*dt_small))
+            _exp_part = np.exp(np.arange(np.log(time_intervals[1]),np.log(tend),dt_small))
+            ts.append(np.round(_exp_part))
+            ts.append(np.array([tend]))
+            self.t1 = np.concatenate(ts, axis=0)
+        elif self.gaussian_t is not None:
+            self.t1 = simple_t_gaussian(0,self.gaussian_t,self.tend,dt_small,10*dt_small,*self.pulses,decimals=1, exp_part=self.simple_exp)
+            # print(self.t1)
+            # print(len(self.t1))
+        else:
+            self.t1 = construct_t(0, self.tend, dt_small, 1*dt_small, dt_small, *self.pulses, simple_exp=self.simple_exp, factor_tau=factor_tau)
+        self.t1 = round_to_dt(self.t1, self.dt)
 
-        time_generator = UnregularTimeAxis(0, tend, self.max_pulse_t + self.t_mem,
-                                           dt_small=dt_small, dt_big=dt_big, pulses=pulses,
-                                           include_tend=True, round_dt=True)
-        self.t1 = time_generator.time_axis_two_step(exponential_part=exponential_stepping)
-        if variable_stepping:
-            self.t1 = time_generator.time_axis_variable(exponential_part=exponential_stepping,
-                                                        dt_big_variable=dt_big)
-        if regular_stepping:
-            self.t1 = time_generator.time_axis_regular()
+    def prepare_pulsefile(self, verbose=False):
+        # 2*tb is the maximum simulation length, 0 is the start of the simulation
+        _t_pulse = np.arange(0,self.tend,step=self.dt/5)  # notice that for usual propagation, dt/10 is used
+        # different polarizations
+        self.pulse_file_x = self.temp_dir + "polar_ent_pulse_x_{}.dat".format(id(self))  # add object id, otherwise sometimes the wrong file is used
+        self.pulse_file_y = self.temp_dir + "polar_ent_pulse_y_{}.dat".format(id(self))  # probably because the destructor is called after the next object is created
+        pulse_x = np.zeros_like(_t_pulse, dtype=complex)
+        pulse_y = np.zeros_like(_t_pulse, dtype=complex)
+        for _p in self.pulses:
+            pulse_x = pulse_x + _p.polar_x*_p.get_total(_t_pulse)
+            pulse_y = pulse_y + _p.polar_y*_p.get_total(_t_pulse)
+        export_csv(self.pulse_file_x, _t_pulse, pulse_x.real, pulse_x.imag, precision=8, delimit=' ', verbose=verbose)
+        export_csv(self.pulse_file_y, _t_pulse, pulse_y.real, pulse_y.imag, precision=8, delimit=' ', verbose=verbose)
 
-        if self.verbose:
-            print("t1 axis for spectrum calculation: ", len(self.t1), " points")
-            n_tau = int(self.tend / self.dt)
-            print("tau axis for spectrum calculation: ", n_tau + 1, " points")
+    def __del__(self):
+        if self.remove_files:
+            os.remove(self.pulse_file_x)
+            os.remove(self.pulse_file_y)
 
     def get_tl(self):
-        self._t_mem = round_to_dt(self.max_pulse_t, self.dt)  # use max_pulse_t as memory time
-        if self.max_pulse_t is None:
-            raise ValueError("max_pulse_t must be set to calculate time-local maps, it is used as 'memory time' for phonon-free dynamics.")
+        # if t_mem is None:
+            # t_mem = self.gaussian_t
+        # if t_mem is None:
+            # t_mem = self.tend/2
+        self._t_mem = round_to_dt(self.gaussian_t, self.dt)  # use gaussian_t as memory time
+        if self.gaussian_t is None:
+            raise ValueError("gaussian_t must be set to calculate time-local maps, it is used as 'memory time' for phonon-free dynamics.")
         tend = 2*self._t_mem
         # _options = self.options.copy()
         # _options["pulse_file_x"] = self.pulse_file_x
         # _options["pulse_file_y"] = self.pulse_file_y
        
-        _t, dm = self.system.run(0, tend, *self.pulses, multitime_op=[], calc_dynmap=True)
+        result, dm = self.system(0, tend, multitime_op=[], calc_dynmap=True, **self.options)
+        _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
         # check_tlmap_frobenius(dm_tl, _t, xlim=tend-self.dt)
-        # memory_time = self._t_mem # if self.max_pulse_t is not None else self.tend
+        # memory_time = self._t_mem # if self.gaussian_t is not None else self.tend
         tl_map, dms = extract_dms(dm_tl, _t, self._t_mem, t_MTOs=[])
         
         self.tl_map = tl_map
@@ -142,9 +158,10 @@ class PolarizationEntanglement():
         self.dm_tl = dm_tl
 
     def get_tl_phonons(self, mtos=[], t_mtos=[]):
-        tmem = self.max_pulse_t + self.t_mem
+        tmem = self.gaussian_t + self.t_mem
         tend = 2.1*tmem
-        _t, dm = self.system.run(0, tend, *self.pulses, multitime_op=mtos, calc_dynmap=True)
+        result, dm = self.system(0, tend, multitime_op=mtos, calc_dynmap=True, **self.options)
+        _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
         tl_map, dms = extract_dms(dm_tl, _t, tmem, t_MTOs=t_mtos)
@@ -152,10 +169,9 @@ class PolarizationEntanglement():
         return tl_map, dms
     
     def G2_tl(self, op1_t, op2_ttau, op3_ttau, op4_t, tau_max=None, time_sparse=None, return_final_tau=False):
-        _require_propagate_tau_tl()
-        if self.phonons:
+        if self.options["phonons"]:
             return self.G2_tl_phonons(op1_t, op2_ttau, op3_ttau, op4_t)
-        dim = np.shape(op1_t)[0]
+        dim = np.shape(op_to_matrix(op1_t))[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
         if tau_max is None:
@@ -173,9 +189,9 @@ class PolarizationEntanglement():
 
         _tend = time_sparse[-1] + tau_max
         t_axis = np.linspace(0, _tend, int(_tend/self.dt) + 1)
-        opA_mat = op1_t
-        opB_mat = op2_ttau @ op3_ttau
-        opC_mat = op4_t
+        opA_mat = op_to_matrix(op1_t)
+        opB_mat = (op_to_matrix(op2_ttau) @ op_to_matrix(op3_ttau))
+        opC_mat = op_to_matrix(op4_t)
         G2 = propagate_tau_module.calc_onetime_simple(dm_block=dm_tl,dm_s=dm_s,rho_init=rho0.reshape(dim**2),n_tb=int(tau_max/self.dt),dim=dim,
                                                       opa=opA_mat,opb=opB_mat,opc=opC_mat,time=np.round(t_axis,6),time_sparse=np.round(time_sparse,6))
         # print(np.shape(G2_ttau))
@@ -188,7 +204,7 @@ class PolarizationEntanglement():
         return time_sparse, G2, np.trapezoid(G2, time_sparse, axis=0)  # , tau, G2_ttau[50]
 
     def G2_analytic_integrated(self, op1_t, op2_ttau, op3_ttau, op4_t):
-        dim = np.shape(op1_t)[0]
+        dim = np.shape(op_to_matrix(op1_t))[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
 
@@ -224,9 +240,9 @@ class PolarizationEntanglement():
         # part: t >= t_mem, tau >= 0
         G2 = np.zeros(len(self.t1), dtype=complex)
         # op1 and op4 are brought to matrix form, op23 are brought to vector form
-        op_1 = np.kron(op1_t.T, np.eye(dim))  # op_1 is applied from right at time t
-        op_23 = (op2_ttau @ op3_ttau).reshape(dim**2)
-        op_4 = np.kron(np.eye(dim), op4_t)  # op_4 is applied from left at time t+tau
+        op_1 = np.kron(op_to_matrix(op1_t).T, np.eye(dim))  # op_1 is applied from right at time t
+        op_23 = (op_to_matrix(op2_ttau) @ op_to_matrix(op3_ttau)).reshape(dim**2)
+        op_4 = np.kron(np.eye(dim), op_to_matrix(op4_t))  # op_4 is applied from left at time t+tau
         # t > tmem part: start with rho_tmem
 
         rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem, this directly propagates rho from 0 to tmem
@@ -242,13 +258,11 @@ class PolarizationEntanglement():
         x_total = x_n1n2 / (z_n1[:,None]*z_n1[None,:])
         G2 = (np.sum(x_total, axis=(0,1)))  # first part: t >= t_mem, tau >= 0
 
-        # second part: t <= tmem, tau <= tmem
         time_small = self.t1[self.t1 <= self._t_mem]
         # use existing function to calculate this part
         _, G2_smalltau, G2_smalltau_int, G2_tau, _tau = self.G2_tl(op1_t, op2_ttau, op3_ttau, op4_t, tau_max=self._t_mem, time_sparse=time_small, return_final_tau=True)
         G2 += G2_smalltau_int
 
-        # third part: t < tmem, tau > tmem.
         rho_t = np.zeros((len(time_small), dim*dim), dtype=complex)
         rho_t[0] = rho0.reshape(dim**2)
         _propagators = np.zeros((len(time_small), dim*dim, dim*dim), dtype=complex)
@@ -291,7 +305,7 @@ class PolarizationEntanglement():
         return G2
 
     def G2_tl_analytic(self, op1_t, op2_ttau, op3_ttau, op4_t):
-        dim = np.shape(op1_t)[0]
+        dim = np.shape(op_to_matrix(op1_t))[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
 
@@ -327,9 +341,9 @@ class PolarizationEntanglement():
         # part: t >= t_mem, tau >= 0
         G2 = np.zeros(len(self.t1), dtype=complex)
         # op1 and op4 are brought to matrix form, op23 are brought to vector form
-        op_1 = np.kron(op1_t.T, np.eye(dim))  # op_1 is applied from right at time t
-        op_23 = (op2_ttau @ op3_ttau).reshape(dim**2)
-        op_4 = np.kron(np.eye(dim), op4_t)  # op_4 is applied from left at time t+tau
+        op_1 = np.kron(op_to_matrix(op1_t).T, np.eye(dim))  # op_1 is applied from right at time t
+        op_23 = (op_to_matrix(op2_ttau) @ op_to_matrix(op3_ttau)).reshape(dim**2)
+        op_4 = np.kron(np.eye(dim), op_to_matrix(op4_t))  # op_4 is applied from left at time t+tau
         # t > tmem part: start with rho_tmem
 
         rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem
@@ -388,9 +402,9 @@ class PolarizationEntanglement():
         # rho_tnow = np.zeros(dim*dim, dtype=complex)
         # rho_tnow = rho0.reshape(dim**2)
         # G2_small_t_tau[0,:] = 0
-        # op_23_matrix = op2_ttau @ op3_ttau
-        # op1_matrix = op1_t
-        # op4_matrix = op4_t
+        # op_23_matrix = op_to_matrix(op2_ttau) @ op_to_matrix(op3_ttau)
+        # op1_matrix = op_to_matrix(op1_t)
+        # op4_matrix = op_to_matrix(op4_t)
         # for i in tqdm.trange(len(time_small)-1):
         #     # propagate to t
         #     rho_tnow = dm_tl[i] @ rho_tnow
@@ -454,9 +468,9 @@ class PolarizationEntanglement():
         G2[self.t1 <= self._t_mem] = G2_smalltau + G2_bigtau
         return self.t1, G2, np.trapezoid(G2, self.t1, axis=0)
 
-    def get_dm2_phonons_advanced(self, mtos, t_mto):
+    def get_dm2_phonons_advanced(self, mtos, t_mto, suffix=1):
         # in principle, we don't have to calculate the tl-maps up until t_mto + t_gaussian + self.t_mem + 2*self.dt,
-        # but the correct final time depends on t_mto, as max_pulse_t is absolute and t_mem is always needed. 
+        # but the correct final time depends on t_mto, as gaussian_t is absolute and t_mem is always needed. 
         # this means the maximum final time will be t_gaussian + 2 * t_mem
         # while t_mto is t_gaussian + t_mem, meaning before we used a maximum of 2*t_gaussian + 2*t_mem.
         mtos_new = []
@@ -464,8 +478,9 @@ class PolarizationEntanglement():
             mto_new = mto.copy()
             mto_new["time"] = t_mto
             mtos_new.append(mto_new)
-        t_end = self.max_pulse_t + 2 * self.t_mem + 2*self.dt
-        _t, dm = self.system.run(0, t_end, *self.pulses, multitime_op=mtos_new, calc_dynmap=True)
+        t_end = self.gaussian_t + 2 * self.t_mem + 2*self.dt
+        result, dm = self.system(0, t_end, multitime_op=mtos_new, calc_dynmap=True, suffix=suffix, **self.options)
+        _t = result[0]  # time axis for getting the dynamic maps
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
         # extracting the dynmaps is now a bit different, as we have to take into account the reduced
@@ -474,18 +489,17 @@ class PolarizationEntanglement():
         # for t_mto = 1, memory time = t_gaussian - 1 + t_mem, 
         # for t_mto = t_gaussian, memory time = t_mem
         # from then on, it is always t_mem, as this is the minimum memory time we need
-        memory_time = np.max([self.max_pulse_t + self.t_mem - t_mto, self.t_mem])
+        memory_time = np.max([self.gaussian_t + self.t_mem - t_mto, self.t_mem])
         _, dms = extract_dms(dm_tl, _t, memory_time, t_MTOs=[t_mto])
         return dms[1]  # return the second dynamic map, which is the one we need for the phonon dynamics
     
     def G2_tl_phonons(self, op1_t, op2_ttau, op3_ttau, op4_t):
-        _require_propagate_tau_tl()
-        t_apply = self.max_pulse_t + self.t_mem + 5*self.dt
-        _mto = {"operator": op4_t, "applyFrom": "left", "applyBefore": False, "time": t_apply}
-        _mto2 = {"operator": op1_t, "applyFrom": "right", "applyBefore": False, "time": t_apply}
+        t_apply = self.gaussian_t + self.t_mem + 5*self.dt
+        _mto = {"operator": op4_t, "applyFrom": "_left", "applyBefore": "false", "time": t_apply}
+        _mto2 = {"operator": op1_t, "applyFrom": "_right", "applyBefore": "false", "time": t_apply}
         tl_map, dms_sep = self.get_tl_phonons(mtos=[_mto,_mto2], t_mtos=[t_apply])
 
-        dim = np.shape(op1_t)[0]
+        dim = np.shape(op_to_matrix(op1_t))[0]
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0
 
@@ -493,10 +507,10 @@ class PolarizationEntanglement():
         n_tau = int(tau_max/self.dt)
         tau = np.linspace(0, tau_max, n_tau + 1)
 
-        t_mem_indices = np.where(self.t1 <= (self.max_pulse_t + self.t_mem))[0]
+        t_mem_indices = np.where(self.t1 <= (self.gaussian_t + self.t_mem))[0]
         # calc tl maps:
         # always let the maps have the same shape as the dms_sep[0], which is computed using a memory time of
-        # self.max_pulse_t + self.t_mem.
+        # self.gaussian_t + self.t_mem.
         # In principle, the shape of the time-dependent dynamical maps is a little smaller,
         # but we need to pass a 'nice' array to fortran. We just fill the rest with
         # the time-local map.  
@@ -527,9 +541,9 @@ class PolarizationEntanglement():
         # is self.t_axis_complete, which contains less time points so we need less propagations.
         t_axis = np.linspace(0, _tend, int(_tend/self.dt) + 1)
 
-        opA_mat = op1_t
-        opB_mat = op2_ttau @ op3_ttau
-        opC_mat = op4_t
+        opA_mat = op_to_matrix(op1_t)
+        opB_mat = op_to_matrix(op2_ttau) @ op_to_matrix(op3_ttau)
+        opC_mat = op_to_matrix(op4_t)
 
         G2 = propagate_tau_module.calc_onetime_simple_phonon(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
                                                             rho_init=rho0.reshape(dim**2),n_tb=int(self.tend/self.dt),
@@ -580,33 +594,33 @@ class PolarizationEntanglement():
         # use analytic_integrated
         density_matrix = np.zeros([4,4], dtype=complex)
         with tqdm.tqdm(total=10, leave=None) as tq:
-            density_matrix[0,0] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ax, self.ax)  # xx,xx
+            _,_,density_matrix[0,0] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ax, self.ax)  # xx,xx
             tq.update()
-            density_matrix[3,3] = self.G2_analytic_integrated(self.aydag, self.aydag, self.ay, self.ay)  # yy,yy
+            _,_,density_matrix[3,3] = self.G2_analytic_integrated(self.aydag, self.aydag, self.ay, self.ay)  # yy,yy
             tq.update()
-            density_matrix[1,1] = self.G2_analytic_integrated(self.axdag, self.aydag, self.ay, self.ax)  # xy,xy
+            _,_,density_matrix[1,1] = self.G2_analytic_integrated(self.axdag, self.aydag, self.ay, self.ax)  # xy,xy
             tq.update()
-            density_matrix[2,2] = self.G2_analytic_integrated(self.aydag, self.axdag, self.ax, self.ay)  # yx,yx
+            _,_,density_matrix[2,2] = self.G2_analytic_integrated(self.aydag, self.axdag, self.ax, self.ay)  # yx,yx
             tq.update()
 
-            density_matrix[0,1] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ay, self.ax)  # xx,xy
+            _,_,density_matrix[0,1] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ay, self.ax)  # xx,xy
             tq.update()
             density_matrix[1,0] = np.conj(density_matrix[0,1])
-            density_matrix[0,2] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ax, self.ay)  # xx,yx
+            _,_,density_matrix[0,2] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ax, self.ay)  # xx,yx
             tq.update()
             density_matrix[2,0] = np.conj(density_matrix[0,2])
-            density_matrix[0,3] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ay, self.ay)  # xx,yy
+            _,_,density_matrix[0,3] = self.G2_analytic_integrated(self.axdag, self.axdag, self.ay, self.ay)  # xx,yy
             tq.update()
             density_matrix[3,0] = np.conj(density_matrix[0,3])
 
-            density_matrix[1,2] = self.G2_analytic_integrated(self.axdag, self.aydag, self.ax, self.ay)  # xy,yx
+            _,_,density_matrix[1,2] = self.G2_analytic_integrated(self.axdag, self.aydag, self.ax, self.ay)  # xy,yx
             tq.update()
             density_matrix[2,1] = np.conj(density_matrix[1,2])
-            density_matrix[1,3] = self.G2_analytic_integrated(self.axdag, self.aydag, self.ay, self.ay)  # xy,yy
+            _,_,density_matrix[1,3] = self.G2_analytic_integrated(self.axdag, self.aydag, self.ay, self.ay)  # xy,yy
             tq.update()
             density_matrix[3,1] = np.conj(density_matrix[1,3])
 
-            density_matrix[2,3] = self.G2_analytic_integrated(self.aydag, self.axdag, self.ay, self.ay)  # yx,yy
+            _,_,density_matrix[2,3] = self.G2_analytic_integrated(self.aydag, self.axdag, self.ay, self.ay)  # yx,yy
             tq.update()
             density_matrix[3,2] = np.conj(density_matrix[2,3])
         norm = np.trace(density_matrix)
@@ -619,10 +633,16 @@ class PolarizationEntanglement():
         <op2(t1+tau) op1(t1)>
         """
         # check if first char of op1_t and op2_ttau is a bracket
-        tau0_op = op2_ttau @ op1_t
+        if op1_t[0] != "(":
+            op1_t = "(" + op1_t + ")"
+            print("WARNING: added brackets to op1_t")
+        if op2_ttau[0] != "(":
+            op2_ttau = "(" + op2_ttau + ")"
+            print("WARNING: added brackets to op2_ttau")
+        tau0_op = op2_ttau + " * " + op1_t
         output_ops = [op2_ttau, tau0_op]
         # at t1, apply op1 from left
-        op_1 = {"operator": op1_t, "applyFrom": "left", "applyBefore":False}
+        op_1 = {"operator": op1_t, "applyFrom": "_left", "applyBefore":"false"}
 
         t1 = self.t1
         n_tau = int((self.tend)/self.dt)
@@ -639,25 +659,25 @@ class PolarizationEntanglement():
                     # t_end is always t[i]+tend, as we want to calculate G1 for tau=t[i],...,tend,
                     # i.e., always the same length for the tau axis, as these will be fourier transformed
                     # to get the spectrum
-                    _e = executor.submit(self.system.run,0,t1[i]+tend,*self.pulses,multitime_op=[op_1_new], output_ops=output_ops)
+                    _e = executor.submit(self.system,0,t1[i]+tend,multitime_op=[op_1_new], suffix=i, output_ops=output_ops, **self.options)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 # wait for all futures
                 wait(futures)
             for i in range(len(futures)):
                 # futures are still 'future' objects
-                _, futures[i] = futures[i].result()
+                futures[i] = futures[i].result()
             # futures now contains [t,<op2>,<op2*op1>] for every i
             for i in range(len(t1)):
-                _G1[i,0] = futures[i][1][-(n_tau+1)]  # tau=0
-                _G1[i,1:] = futures[i][0][-n_tau:]  # tau>0
+                _G1[i,0] = futures[i][2][-(n_tau+1)]  # tau=0
+                _G1[i,1:] = futures[i][1][-n_tau:]  # tau>0
         return t1, t2, _G1
     
     def calc_timedynamics_tl_phonons(self):
         tl_map, dms = self.get_tl_phonons(mtos=[], t_mtos=[])
         dm_sep1 = dms[0]
 
-        opt_mat = self.ax
+        opt_mat = op_to_matrix(self.ax)
         self.dim = np.shape(opt_mat)[0]
 
         len_tb = int(self.tend/self.dt)
@@ -679,13 +699,13 @@ class PolarizationEntanglement():
         return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))
 
     def calc_timedynamics_tl(self):
-        if self.phonons:
+        if self.options["phonons"]:
             return self.calc_timedynamics_tl_phonons()
         if self.tl_map is None:
             # calculate the dynamical maps
             self.get_tl()
         
-        opt_mat = self.ax
+        opt_mat = op_to_matrix(self.ax)
         self.dim = np.shape(opt_mat)[0]
 
         len_tb = int(self.tend/self.dt)
@@ -710,7 +730,7 @@ class PolarizationEntanglement():
         new_options = dict(self.options)
         if output_ops is not None:
             new_options["output_ops"] = output_ops
-        return self.system.run(0, self.tend, *self.pulses, output_ops=new_options.get("output_ops", []))
+        return self.system(0, self.tend, **new_options)
     
     def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None):
         """
@@ -750,12 +770,12 @@ class PolarizationEntanglement():
         """
         if tl:
             return self.G2_tl(op1_t, op2_ttau, op3_ttau, op4_t)
-        op23_ttau = op2_ttau @ op3_ttau
-        tau0_op = op1_t @ op23_ttau @ op4_t
+        op23_ttau = op2_ttau + " * " + op3_ttau
+        tau0_op = op1_t + " * " + op23_ttau + " * " + op4_t
         output_ops = [op23_ttau, tau0_op]
         # at t1, apply op4 from left and op1 from right
-        op_1 = {"operator": op1_t, "applyFrom": "right", "applyBefore":False}
-        op_4 = {"operator": op4_t, "applyFrom": "left", "applyBefore":False}
+        op_1 = {"operator": op1_t, "applyFrom": "_right", "applyBefore":"false"}
+        op_4 = {"operator": op4_t, "applyFrom": "_left", "applyBefore":"false"}
 
         t1 = self.t1
         n_tau = int((self.tend)/self.dt)
@@ -775,14 +795,14 @@ class PolarizationEntanglement():
                     op_4_new["time"] = t1[i]
                     # apply op4 from left and sigma_bbdag from right
                     multitme_ops = [op_1_new, op_4_new]
-                    _e = executor.submit(self.system.run,0,tend,*self.pulses,multitime_op=multitme_ops, output_ops=output_ops)
+                    _e = executor.submit(self.system,0,tend,multitime_op=multitme_ops, suffix=i, output_ops=output_ops, **self.options)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 # wait for all futures
                 wait(futures)
             for i in range(len(futures)):
                 # futures are still 'future' objects
-                _, futures[i] = futures[i].result()
+                futures[i] = futures[i].result()
             # futures now contains [t,<op2*op3>,<op1*op2*op3*op4>] for every i
             for i in range(len(t1)):
                 # t2 = t1,...,tend
@@ -790,11 +810,11 @@ class PolarizationEntanglement():
                 temp_t2 = np.zeros(n_t2+1, dtype=complex)
                 # special case tau=0:
                 # as then, Tr(op1*op2*op3*op4 * rho) = G2(t,0), which is the value with index [2][-(n_t2+1)]
-                temp_t2[0] = futures[i][1][-(n_t2+1)]
+                temp_t2[0] = futures[i][2][-(n_t2+1)]
                 # futures[i][2] are the corresponding values, [1] are the values for tau>0, when the operators are applied separately
                 # here, we want the <op2*op3>-values for every t2=t1,..,tend
                 if n_t2 > 0: 
-                    temp_t2[1:n_t2+1] = futures[i][0][-n_t2:]
+                    temp_t2[1:n_t2+1] = futures[i][1][-n_t2:]
                 t_new = t2[:len(temp_t2)]
                 # plt.clf()
                 # plt.plot(t_new,np.real(temp_t2),'r-')
@@ -811,15 +831,15 @@ class PolarizationEntanglement():
         density_matrix = np.zeros([4,4], dtype=complex)
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
-            op23s = [self.axdag @ self.ax, self.axdag @ self.ay, self.aydag @ self.ay]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
             t1, G2_1_t, G2_1 = self.G2_reuse(self.axdag, op23s, self.ax)
             tq.update()
             # XX,YX; XX,YY; XY,YX; XY,YY
-            op23s = [self.axdag @ self.ax, self.axdag @ self.ay, self.aydag @ self.ax, self.aydag @ self.ay]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
             t2, G2_2_t, G2_2 = self.G2_reuse(self.axdag, op23s, self.ay)
             tq.update()
             # YX,YX; YX,YY; YY,YY
-            op23s = [self.axdag @ self.ax, self.axdag @ self.ay, self.aydag @ self.ay]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
             t3, G2_3_t, G2_3 = self.G2_reuse(self.aydag, op23s, self.ay)
             tq.update()
 
@@ -868,15 +888,15 @@ class PolarizationEntanglement():
     def calc_timedep_data(self):
         with tqdm.tqdm(total=3, leave=None) as tq:
             # 0 XX,XX; 1 XX,XY; 2 XY,XY
-            op23s = [self.axdag @ self.ax, self.axdag @ self.ay, self.aydag @ self.ay]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
             t1, t2, _, _, G2_1_full = self.G2_reuse(self.axdag, op23s, self.ax, return_full_G2=True)
             tq.update()
             # 3 XX,YX; 4 XX,YY; 5 XY,YX; 6 XY,YY
-            op23s = [self.axdag @ self.ax, self.axdag @ self.ay, self.aydag @ self.ax, self.aydag @ self.ay]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ax,self.aydag + " * " + self.ay]
             t1, t2, _, _, G2_2_full = self.G2_reuse(self.axdag, op23s, self.ay, return_full_G2=True)
             tq.update()
             # 7 YX,YX; 8 YX,YY; 9 YY,YY
-            op23s = [self.axdag @ self.ax, self.axdag @ self.ay, self.aydag @ self.ay]
+            op23s = [self.axdag + " * " + self.ax, self.axdag + " * " + self.ay, self.aydag + " * " + self.ay]
             t1, t2, _, _, G2_3_full = self.G2_reuse(self.aydag, op23s, self.ay, return_full_G2=True)
             tq.update()
         return t1,t2,np.append(G2_1_full,np.append(G2_2_full,G2_3_full,axis=0),axis=0)
@@ -974,11 +994,11 @@ class PolarizationEntanglement():
         """
         tau0_ops = []  # operators for tau=0
         for op23_ttau in op23s_ttau:
-            tau0_ops.append(op1_t @ op23_ttau @ op4_t)
+            tau0_ops.append(op1_t + " * " + op23_ttau + " * " + op4_t)
         output_ops = op23s_ttau + tau0_ops  # concatenate lists
         # at t1, apply op4 from left and op1 from right
-        op_1 = {"operator": op1_t, "applyFrom": "right", "applyBefore":False}
-        op_4 = {"operator": op4_t, "applyFrom": "left", "applyBefore":False}
+        op_1 = {"operator": op1_t, "applyFrom": "_right", "applyBefore":"false"}
+        op_4 = {"operator": op4_t, "applyFrom": "_left", "applyBefore":"false"}
 
         t1 = self.t1
         n_tau = int((self.tend)/self.dt)
@@ -1001,14 +1021,14 @@ class PolarizationEntanglement():
                     op_4_new["time"] = t1[i]
                     # apply op4 from left and sigma_bbdag from right
                     multitme_ops = [op_1_new, op_4_new]
-                    _e = executor.submit(self.system.run,0,tend,*self.pulses,multitime_op=multitme_ops, output_ops=output_ops)
+                    _e = executor.submit(self.system,0,tend,multitime_op=multitme_ops, suffix=i, output_ops=output_ops, **self.options)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 # wait for all futures
                 wait(futures)
             for i in range(len(futures)):
                 # futures are still 'future' objects
-                _, futures[i] = futures[i].result()
+                futures[i] = futures[i].result()
             # futures now contains [t,<op2*op3> for all op23s,<op1*op2*op3*op4> for all op23s] for every i
             # so if op_23s has length 2, futures[i] has length 5
             # and futures[i][1,...,len(op23s)] are the <op2*op3>-values
@@ -1020,11 +1040,11 @@ class PolarizationEntanglement():
                 for j in range(len(op23s_ttau)):
                     # special case tau=0:
                     # as then, Tr(op1*op2*op3*op4 * rho) = G2(t,0), which is the value with index [1+len(op23s)+j][-(n_t2+1)]
-                    temp_t2[j,0] = futures[i][len(op23s_ttau) + j][-(n_t2+1)]
+                    temp_t2[j,0] = futures[i][1+len(op23s_ttau) + j][-(n_t2+1)]
                     # futures[i][1+len(op23s)+j] are the corresponding values, [1+j] are the values for tau>0, when the operators are applied separately
                     # here, we want the <op2*op3>-values for every t2=t1,..,tend
                     if n_t2 > 0: 
-                        temp_t2[j,1:n_t2+1] = futures[i][j][-n_t2:]
+                        temp_t2[j,1:n_t2+1] = futures[i][1+j][-n_t2:]
                     
                     if return_full_G2:
                         G2_full[j, i, :n_t2+1] = temp_t2[j]

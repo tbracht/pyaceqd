@@ -48,6 +48,28 @@ class Indistinguishability:
                  regular_stepping=False, variable_stepping=False, 
                  exponential_stepping=False, max_pulse_t=None, verbose=False, workers=15,
                  factor_t=1, factor_tau=2, dt_big=None, add_tend=True, use_dm=True):
+        """
+        Docstring for __init__
+        
+        :param system: system object, e.g., TLS
+        :param sigma_x: operator for the two-time correlation function
+        :param pulses: pulse object
+        :param tb: timebin duration
+        :param t_mem: memory time of system, important for dynamical maps
+        :param dt_small: timestep of t axis. needs to be a multiple of system.dt
+        :param regular_stepping: t and tau axis with dt_small
+        :param variable_stepping: t axis around the pulse is spaced according to the pulse amplitude
+        :param exponential_stepping: t axis after max_pulse_t uses exponentially increasing dt
+        :param max_pulse_t: time after which the pulse is negligible, used for exponential stepping and time-local maps. Use QuenchedPulse if you want to be sure
+        :param verbose: print some information about the calculations
+        :param workers: number of worker threads for parallelization
+        :param factor_t: number of timebins for the t-axis
+        :param factor_tau: number of timebins for the tau-axis
+        :param dt_big: t-spacing after max_pulse_t if not regular stepping and not exponential stepping. 
+        :param add_tend: include t_end in t-axis 
+        :param use_dm: use time-local maps to calculate Indistinguishability. Up to system-dim around 8 this can be way faster
+        """
+
         self.pulses = pulses
         self.system = system
         self.factor_t = factor_t
@@ -64,10 +86,10 @@ class Indistinguishability:
         # print("Max pulse time for purity calculation: ", self.max_pulse_t)
 
         for _p in pulses:
-            if _p.repeat_tb is None:
+            if _p.repeat_tb is None and not use_dm:
                 print("WARNING: pulse repeat_tb is None, but tb is set to {}. Setting repeat_tb to tb".format(tb))
                 _p.set_repeat_tb(tb)
-            if _p.repeat_tb != tb:
+            if _p.repeat_tb is not None and _p.repeat_tb != tb:
                 print("Pulse repeat_tb is {}, but tb is set to {}. This might not be what you want.".format(_p.repeat_tb, tb))
 
         self.tl_map = None
@@ -108,11 +130,11 @@ class Indistinguishability:
         
         # complete t-axis, when t1 is repeated for factor_t > 1
         t_axis_complete = np.array([])
-        for i in range(factor_t):
-            # TODO: 
-            # maybe we need t_axis_complete[:-1] so the last value is not repeated, if we use factor_t > 1
-            # usually we only use factor_t=1, so this is not a problem yet
-            t_axis_complete = np.concatenate((t_axis_complete, self.t1 + i*self.tb))
+        if factor_t > 1:
+            for i in range(factor_t):
+                t_axis_complete = np.concatenate((t_axis_complete[:-1], self.t1 + i*self.tb))
+        else:
+            t_axis_complete = self.t1
         self.t_axis_complete = t_axis_complete
 
         if self.verbose:
@@ -120,6 +142,7 @@ class Indistinguishability:
             print("complete t axis for purity calculation: ", len(self.t_axis_complete), " points")
             n_tau = self.factor_tau*int(self.tb/self.dt)
             print("tau axis for purity calculation: ", n_tau + 1, " points")
+            # we integrate over t1, such that most of the memory cost is for values on the tau-axis
             print("Memory usage estimate: {:.2f} MB (complex128 assumed).".format((n_tau + 1)*16/(1024*1024)))
 
     def calc_timedynamics(self, output_ops=None, t_end=None):
@@ -143,37 +166,36 @@ class Indistinguishability:
         out_op1 = opB
         out_op_tau0 = opA @ opB @ opC
         output_ops = [out_op1, out_op_tau0]
-        t1 = self.t1
-        factor_t = self.factor_t
+        # t1 = self.t1
+        # factor_t = self.factor_t
         t_axis_complete = self.t_axis_complete
         factor_tau = self.factor_tau
         n_tau = factor_tau*int(self.tb/self.dt)
         t2 = np.linspace(0, factor_tau*self.tb, n_tau + 1)
-        _G2 = np.zeros([factor_t*len(t1), len(t2)])
-        with tqdm.tqdm(total=factor_t*len(t1), leave=None, **tqdm_options) as tq:
-            for i in range(factor_t):
-                with ThreadPoolExecutor(max_workers=self.workers) as executor:
-                    futures = []
-                    for j in range(len(t1)):
-                        tend = i*self.tb + t1[j] + factor_tau*self.tb
-                        sigma_X_new = dict(sigma_left)
-                        sigma_Xdag_new = dict(sigma_right)
-                        sigma_X_new["time"] = i*self.tb + t1[j]
-                        sigma_Xdag_new["time"] = i*self.tb + t1[ j]
-                        multitime_ops = [sigma_X_new, sigma_Xdag_new]
-                        _e = executor.submit(self.system.run, 0, tend, *self.pulses, multitime_op=multitime_ops, output_ops=output_ops)
-                        _e.add_done_callback(lambda f: tq.update())
-                        futures.append(_e)
-                    wait(futures)
-                for j in range(len(t1)):
-                    _,futures[j] = futures[j].result()
-                for j in range(len(t1)):
-                    _G2[j+i*len(t1),1:] = np.abs(futures[j][0][-(n_tau):])
+        _G2 = np.zeros([len(t_axis_complete), len(t2)])
+        with tqdm.tqdm(total=len(t_axis_complete), leave=None, **tqdm_options) as tq:
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                futures = []
+                for j in range(len(t_axis_complete)):
+                    tend = t_axis_complete[j] + factor_tau*self.tb
+                    sigma_X_new = dict(sigma_left)
+                    sigma_Xdag_new = dict(sigma_right)
+                    sigma_X_new["time"] = t_axis_complete[j]
+                    sigma_Xdag_new["time"] = t_axis_complete[j]
+                    multitime_ops = [sigma_X_new, sigma_Xdag_new]
+                    _e = executor.submit(self.system.run, 0, tend, *self.pulses, multitime_op=multitime_ops, output_ops=output_ops)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                wait(futures)
+            for j in range(len(t_axis_complete)):
+                _,futures[j] = futures[j].result()
+            for j in range(len(t_axis_complete)):
+                _G2[j,1:] = np.abs(futures[j][0][-(n_tau):])
                     # special case tau=0:
-                    _G2[j+i*len(t1),0] = np.abs(futures[j][1][-(n_tau+1)])
+                _G2[j,0] = np.abs(futures[j][1][-(n_tau+1)])
         if return_whole:
-            return t1, t2, _G2
-        # integrate over t1
+            return t_axis_complete, t2, _G2
+        # integrate over t-axis
         G2 = np.trapezoid(_G2, t_axis_complete, axis=0)
         return t2, G2
     
@@ -199,32 +221,31 @@ class Indistinguishability:
         out_op1 = self.sigma_xdag
         out_op_tau0 = self.sigma_xdag @ self.sigma_x
         output_ops = [out_op1, out_op_tau0]
-        t1 = self.t1
-        factor_t = self.factor_t
+        # t1 = self.t1
+        # factor_t = self.factor_t
         t_axis_complete = self.t_axis_complete
         factor_tau = self.factor_tau
         n_tau = factor_tau*int(self.tb/self.dt)
         t2 = np.linspace(0, factor_tau*self.tb, n_tau + 1)
-        _G1 = np.zeros([factor_t*len(t1), len(t2)], dtype=complex)
-        with tqdm.tqdm(total=factor_t*len(t1), leave=None) as tq:
-            for i in range(factor_t):
-                with ThreadPoolExecutor(max_workers=self.workers) as executor:
-                    futures = []
-                    for j in range(len(t1)):
-                        tend = i*self.tb + t1[j] + factor_tau*self.tb
-                        sigma_X_new = dict(sigma_x)
-                        sigma_X_new["time"] = i*self.tb + t1[j]
-                        multitime_ops = [sigma_X_new]
-                        _e = executor.submit(self.system.run, 0, tend, *self.pulses, multitime_op=multitime_ops, output_ops=output_ops)
-                        _e.add_done_callback(lambda f: tq.update())
-                        futures.append(_e)
-                    wait(futures)
-                for j in range(len(t1)):
-                    _,futures[j] = futures[j].result()
-                for j in range(len(t1)):
-                    _G1[j+i*len(t1),1:] = futures[j][0][-(n_tau):]
-                    # special case tau=0:
-                    _G1[j+i*len(t1),0] = futures[j][1][-(n_tau+1)]
+        _G1 = np.zeros([len(t_axis_complete), len(t2)], dtype=complex)
+        with tqdm.tqdm(total=len(t_axis_complete), leave=None) as tq:
+            with ThreadPoolExecutor(max_workers=self.workers) as executor:
+                futures = []
+                for j in range(len(t_axis_complete)):
+                    tend = t_axis_complete[j] + factor_tau*self.tb
+                    sigma_X_new = dict(sigma_x)
+                    sigma_X_new["time"] = t_axis_complete[j]
+                    multitime_ops = [sigma_X_new]
+                    _e = executor.submit(self.system.run, 0, tend, *self.pulses, multitime_op=multitime_ops, output_ops=output_ops)
+                    _e.add_done_callback(lambda f: tq.update())
+                    futures.append(_e)
+                wait(futures)
+            for j in range(len(t_axis_complete)):
+                _,futures[j] = futures[j].result()
+            for j in range(len(t_axis_complete)):
+                _G1[j,1:] = futures[j][0][-(n_tau):]
+                # special case tau=0:
+                _G1[j,0] = futures[j][1][-(n_tau+1)]
         # plot _G1
         # plt.clf()
         # plt.pcolormesh(t2, t_axis_complete, np.abs(_G1)**2)
@@ -252,25 +273,25 @@ class Indistinguishability:
         t1 = np.linspace(0, self.factor_t*self.tb, int((self.factor_t*self.tb)/self.dt) + 1)
         
         # Use optimized Fortran implementation if available
-        # if propagate_tau_module is not None:
-        #     G0_tau = propagate_tau_module.sliding_window_correlation(
-        #         val=np.ascontiguousarray(val, dtype=np.float64),
-        #         time_t1=np.ascontiguousarray(t1, dtype=np.float64),
-        #         n_t1=len(t1),
-        #         n_tau=len(t2)-1
-        #     )
-        # else:
+        if propagate_tau_module is not None:
+            G0_tau = propagate_tau_module.sliding_window_correlation(
+                val=np.ascontiguousarray(val, dtype=np.float64),
+                time_t1=np.ascontiguousarray(t1, dtype=np.float64),
+                n_t1=len(t1),  # adapt if t_axis_complete is used instead of t1 -> factor_t > 1
+                n_tau=len(t2)-1
+            )
+        else:
             # Fallback to Python implementation
-        G0_tau = np.zeros(len(t2))  # Only allocate final result array
-        for j in range(len(t2)):
-            # Create temporary view of shifted values
-            val_shifted = val[j:j+len(t1)]
-            # if len(val_shifted) != len(t1):
-            #     print(len(val_shifted), len(t1))
-            # Calculate product for this slice directly
-            product = val[:len(val_shifted)] * val_shifted
-            # Integrate this slice
-            G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
+            G0_tau = np.zeros(len(t2))  # Only allocate final result array
+            for j in range(len(t2)):
+                # Create temporary view of shifted values
+                val_shifted = val[j:j+len(t1)]
+                # if len(val_shifted) != len(t1):
+                #     print(len(val_shifted), len(t1))
+                # Calculate product for this slice directly
+                product = val[:len(val_shifted)] * val_shifted
+                # Integrate this slice
+                G0_tau[j] = np.trapezoid(product, t1[:len(val_shifted)])
         return t2, G0_tau
     
     def simple_propagation_tl(self):
@@ -693,6 +714,8 @@ class Indistinguishability:
         """
         returns indistinguishability,single-photon purity
         """
+        if self.factor_t > 1:
+            raise ValueError("factor_t must be == 1 for indistinguishability calculation. In principle >1 is possible but not implemented yet. simple_propagation and (possibly) time-local implementations are missing the correct logics.")
         # calculate G0, G1 and G2
         # and integrate over tau=0,...,tb/2 and tb/2,...,3tb/2
         if self.use_dm:
