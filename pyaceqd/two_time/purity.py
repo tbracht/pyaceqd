@@ -33,6 +33,7 @@ def get_max_pulse_t(pulses):
     times = []
     for p in pulses:
         times.append(p.t_center + 4*p.tau)
+    warnings.warn("Max pulse time is set to {}. This might not be enough for the pulse to decay to zero. Better set it manually.".format(max(times)))
     return max(times)
 
 def trace_rho(rho, ops):

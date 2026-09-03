@@ -204,7 +204,7 @@ class TLSPhotonTwoSensor(GeneralSystemACE):
 class TLSPhotonTwoSensorReduced(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, phonons=False, n_phot=2, cav_coupl=0.06, cav_loss=0.12, delta_cx=0,
                  delta_s1=0, delta_s2=None, epsilon=1e-3, linewidth1=0.01, linewidth2=None,
-                 ae=5, temperature=4, verbose=False, pt_file=None,
+                 ae=5, temperature=4, verbose=False, pt_file=None, propagate_Taylor_threshold=1e-8,
                  rho0=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="",
                  propagate_Taylor=None, n_sensor_2=2, max_excitations=None, remove_sensor_states=False, remove_states=None):
         n1 = n_phot + 1  # cavity Fock space dimension
@@ -294,5 +294,5 @@ class TLSPhotonTwoSensorReduced(GeneralSystemACE):
         super().__init__(dt=dt, phonons=phonons, ae=ae, temperature=temperature, verbose=verbose, pt_file=pt_file, system_prefix=system_prefix,
                          threshold=threshold, boson_e_max=boson_e_max, rho0=rho0, system_op=system_op, boson_op=boson_op, lindblad_ops=lindblad_ops,
                          lindblad=lindblad, J_to_file=J_to_file, J_file=J_file, factor_ah=factor_ah, pt_dir=pt_dir, modes=modes, rf_op=rf_op,
-                         dim_prod=dim_prod, propagate_Taylor=propagate_Taylor)
+                         dim_prod=dim_prod, propagate_Taylor=propagate_Taylor, propagate_Taylor_threshold=propagate_Taylor_threshold)
 
