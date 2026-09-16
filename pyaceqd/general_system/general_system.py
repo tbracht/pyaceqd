@@ -141,38 +141,40 @@ def _calc_PT_file(dt, threshold, ae, factor_ah, temperature, boson_op, filename,
 
 
 class GeneralSystemACE:
+    """
+    General ACE wrapper with optional phonon process tensors.
+
+    :param dt: Time step for the simulation.
+    :param phonons: Whether to include phonon interaction.
+    :param ae: Electron localization length in nm, used for phonon interaction.
+    :param temperature: Temperature in K, used for phonon interaction.
+    :param verbose: Whether to print information about the simulation.
+    :param pt_file: Process tensor path. If ``None``, it is generated from parameters.
+    :param system_prefix: Prefix used for process tensor naming.
+    :param threshold: Threshold for process tensor calculation.
+    :param boson_e_max: Maximum energy for bosonic spectral density.
+    :param system_op: System Hamiltonian operator(s).
+    :param boson_op: Coupling operator to the bosonic environment.
+    :param lindblad_ops: List of ``(operator, rate)`` Lindblad tuples.
+    :param lindblad: Whether to include Lindblad operators.
+    :param J_to_file: Optional output path for J(omega).
+    :param J_file: Optional input/output path for J(omega).
+    :param factor_ah: Electron-to-hole localization-length ratio.
+    :param pt_dir: Directory for loading/saving process tensor files. If None, it will use the default directory set by pyaceqd.set_pt_dir()
+    :param modes: Mapping of transition operators to light modes, e.g. {"x": |1><0|_2}
+    :param rf_op: Operator used for rotating-frame transformation, e.g. |1><1|_2.
+    :param dim_prod: Subsystem dimensions, for example ``[2, 3, 3]``for a TLS coupled to two 3LS. Used for dressed state analysis.
+    :param colors: Optional dressed-state plotting colors.
+    :param propagate_Taylor: Taylor expansion order for propagation. If None, no Taylor expansion is used
+    :param rho0: Optional default initial density matrix. If None, it can still be specified when calling run(). Value in run() has priority
+    :param expand_pt: Expansion factor for process tensor dimensions.
+    :param propagate_Taylor_threshold: Stopping threshold for Taylor
+       expansion of exp(L).
+    :param t_phonon_cutoff: Phonon interaction cutoff time for PT generation.
+    """
     def __init__(self, dt=0.1, phonons=False, ae=5.0, temperature=4, verbose=False, pt_file=None, system_prefix="", threshold="10", boson_e_max=7,
                  system_op=None, boson_op=None, lindblad_ops=None, lindblad=True, J_to_file=None, J_file=None, factor_ah=None, pt_dir="", modes=None, rf_op=None, dim_prod=None,
                  colors=None, propagate_Taylor=None, rho0=None, expand_pt=None, propagate_Taylor_threshold=1e-8, t_phonon_cutoff=40):
-        """
-        ACE: separate calculation for the process tensor, which can be used to simulate long time scales with interaction to the environment.
-        dt: time step for the simulation
-        phonons: whether to include phonon interaction. Calculates PT if necessary
-        ae: electron localization length in nm, used for phonon interaction
-        temperature: temperature in K, used for phonon interaction
-        verbose: whether to print information about the simulation
-        pt_file: path to the process tensor file. If None, it will be generated based on the parameters.
-        system_prefix: prefix for the process tensor file name, used to identify the system
-        threshold: threshold for the process tensor calculation
-        boson_e_max: maximum energy considered for bosonic spectral density
-        system_op: list of system operators (numpy arrays) that define the system Hamiltonian
-        boson_op: operator that couples to the bosonic environment, used for phonon interaction
-        lindblad_ops: list of tuples (operator, rate) for Lindblad operators
-        lindblad: whether to include Lindblad operators
-        J_to_file: path to save the bosonic spectral density J(omega) to a file. TODO: replace with class method get_boson_j()
-        J_file: path to save/load the bosonic spectral density J(omega) from a file
-        factor_ah: ratio of electron to hole localization lengths, used for phonon interaction
-        pt_dir: directory to save/load the process tensor file. If None, it will use the default directory set by pyaceqd.set_pt_dir()
-        modes: dictionary of operators that can induce transitions and are mapped to light modes, e.g. {"x": |1><0|_2}
-        rf_op: operator used for the rotating frame transformation, e.g. |1><1|_2
-        dim_prod: list of dimensions of subsystems, e.g. [2,3,3] for a TLS coupled to two 3LS. Used for dressed state analysis
-        colors: optional colors for plotting dressed states
-        propagate_Taylor: order of Taylor expansion for propagation. If None, no Taylor expansion is used
-        rho0: initial density matrix as numpy array. If None, it can still be specified when calling run(). Value in run() has priority
-        expand_pt: dimensions to expand the process tensor by. If None, no expansion is done. Example: calc. PT for TLS, couple to two cavities with dimension 2: expand_pt=2*2=4
-        propagate_Taylor_threshold: threshold for stopping Taylor expansion of propagator
-        t_phonon_cutoff: time cutoff for phonon interaction, used for PT calculation
-        """
         self.verbose = verbose
         self.plist_base = []  # parameters that will be used in each simulation
         if system_op is None:

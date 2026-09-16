@@ -360,9 +360,44 @@ class Spectrum:
                 _G1[i, 1:] = futures[i][0][-n_tau:]       # tau>0: sigma_xdag
         return t1, t2, _G1
 
-    def get_spectrum(self, save_g1_dir=None, load=None, dm=True, timeit=False, final_spectrum_only=False):
+    def G0(self):
+        """
+        Calculates <sigma_xdag(t+tau)> * <sigma_x(t)> = np.conj(<sigma_x(t+tau)>) * <sigma_x(t)>
+        which when Fourier-transformed corresponds to the "coherent" part of the spectrum,
+        which can be subtracted from the total spectrum to get the "incoherent" part.
+        """
+        t1 = self.t1
+        n_tau = int(self.tend / self.dt)
+        t2 = np.linspace(0, self.tend, n_tau + 1)
+        _G0 = np.zeros([len(t1), len(t2)], dtype=complex)
+        tend = t1[-1] + self.tend  # final time for the simulation, which is t1[-1] + tau_max
+        # we can just do one calculation of <sigma_x(t)> and then use it to compute <sigma_xdag(t+tau)> = np.conj(<sigma_x(t+tau)>)
+        t, val = self.system.run(0, tend, *self.pulses, output_ops=[self.sigma_x])
+        t = np.asarray(t, dtype=float)
+        val = np.asarray(np.squeeze(val), dtype=complex)
+
+        # With exact dt alignment, evaluate G0 via integer index shifts for speed.
+        # the following is necessary as t1 can be irregularly spaced and not aligned with the simulation grid.
+        i_t1 = np.rint((t1 - t[0]) / self.dt).astype(int)
+        if np.any(i_t1 < 0):
+            raise ValueError("G0 alignment error: negative indices for t1 on simulation grid.")
+        if np.max(i_t1) + n_tau >= len(val):
+            raise ValueError("G0 alignment error: simulation time axis too short for t1+tau indexing.")
+
+        val_t1 = val[i_t1]
+        for j in range(len(t2)):
+            val_shifted = val[i_t1 + j]
+            _G0[:, j] = np.conj(val_shifted) * val_t1  # <sigma_xdag(t+tau)> * <sigma_x(t)>
+        return t1, t2, _G0
+
+    def get_spectrum(self, save_g1_dir=None, load=None, dm=True, timeit=False, final_spectrum_only=False, return_coherent=False):
         """
         Calculates the spectrum via G1: <sigma_xdag(t1+tau) sigma_x(t1)>
+        returns:
+        energies: np.ndarray, shape (n_e,), energy axis for the spectrum
+        spectrum: np.ndarray, shape (n_e,), the computed spectrum S(omega)
+        spectra: np.ndarray, shape (len(t_axis), len(tau_axis)), the computed spectrum S(omega, t)
+        optionally: spectrum_coh: np.ndarray, shape (n_e,), the computed coherent spectrum S_coh(omega)
         """
         if load is not None and os.path.exists(load + "g1.npy"):
             t_axis = np.load(load + "t_axis.npy")
@@ -398,13 +433,24 @@ class Spectrum:
         for j in range(len(g1_symm)):
             spectra[j] = np.fft.fftshift(np.fft.fft(g1_symm[j]))
         spectrum = np.real(np.trapezoid(spectra.transpose(), t_axis))
+        if return_coherent:
+            t_axis, tau_axis, g0 = self.G0()
+            g0_symm = np.empty([len(t_axis), 2 * len(tau_axis) - 1], dtype=complex)
+            g0_symm[:, :len(tau_axis)] = g0[:, ::-1]
+            g0_symm[:, -(len(tau_axis) - 1):] = np.conj(g0[:, 1:])
+            spectra_coh = np.empty([len(g0_symm), len(g0_symm[0])], dtype=complex)
+            for j in range(len(g0_symm)):
+                spectra_coh[j] = np.fft.fftshift(np.fft.fft(g0_symm[j]))
+            spectrum_coh = np.real(np.trapezoid(spectra_coh.transpose(), t_axis))
         if timeit:
             end_time = time.time()
             print(f"Spectrum calculation took {end_time - start_time} seconds.")
+        if return_coherent:
+            return np.fft.fftshift(fft_freqs), spectrum, spectra, spectrum_coh
         return np.fft.fftshift(fft_freqs), spectrum, spectra
 
     
-    def get_onesided_spectrum(self, e_min=-10, e_max=10, n_e=1000, save_g1_dir=None, load=None, dm=True, timeit=False):
+    def get_onesided_spectrum(self, e_min=-10, e_max=10, n_e=1000, save_g1_dir=None, load=None, dm=True, timeit=False, return_coherent=False):
         """
         Calculates the spectrum via G1: <sigma_xdag(t1+tau) sigma_x(t1)>
         Return S(omega) = Re(int_0^infinity dtau exp(-i omega tau) int_0^infinity dt G1(t, tau))
@@ -464,6 +510,11 @@ class Spectrum:
         # approximation for t-> infinity: first integral, then oneside FT
         integrated_g1 = np.trapezoid(g1, t_axis, axis=0)
         spectrum = np.trapezoid(integrated_g1 * np.exp(-1j * energies[:, None] * tau_axis / hbar), tau_axis)
+        if return_coherent:
+            t_axis, tau_axis, g0 = self.G0()
+            integrated_g0 = np.trapezoid(g0, t_axis, axis=0)
+            spectrum_coh = np.trapezoid(integrated_g0 * np.exp(-1j * energies[:, None] * tau_axis / hbar), tau_axis)
+            return energies, np.real(spectrum), np.real(spectrum_coh)
         return energies, np.real(spectrum)
 
     def get_time_dependent_spectrum_tl(self, tend=100, omega_min=-5, omega_max=5, domega=0.1, plot=False, filename="timedep_spectrum_tl"):
@@ -492,7 +543,7 @@ class Spectrum:
             plt.savefig(filename+"_tend.png")
         return omega_axis, t_axis, S_omega_t
 
-    def get_time_dependent_spectrum(self, tend, omega_min=-5, omega_max=5, domega=0.1, tl=False):
+    def get_time_dependent_spectrum(self, tend, omega_min=-5, omega_max=5, domega=0.1):
         """
         Compute S(omega, t) = Re(int_0^t dt' int_0^{t-t'} dtau G1(t',tau) exp(-i omega tau))
         on a regular time grid matching n*dt.
@@ -502,10 +553,7 @@ class Spectrum:
         n_t = int(tend / _dt)
         t_axis = np.linspace(0, tend, n_t + 1)
         self.t1 = t_axis
-        if tl:
-            t_axis, tau_axis, g1 = self.G1_tl()
-        else:
-            t_axis, tau_axis, g1 = self.G1()
+        t_axis, tau_axis, g1 = self.G1_tl()
         tau_axis = tau_axis[::int(_dt / self.dt)]
         g1 = g1[:, ::int(_dt / self.dt)]
         _omega_max = np.abs(omega_max) + np.abs(omega_min)
@@ -518,8 +566,5 @@ class Spectrum:
         plt.xlabel("Frequency (meV)")
         plt.ylabel("Time (ps)")
         plt.colorbar(label="log(S(omega,t))")
-        if tl:
-            plt.savefig("time_dep_spectrum_tl.png")
-        else:
-            plt.savefig("time_dep_spectrum.png")
+        plt.savefig("time_dep_spectrum.png")
         return S_omega_t
