@@ -222,6 +222,43 @@ class QuenchedChirpedPulse(ChirpedPulse):
     def copy(self):
         return QuenchedChirpedPulse(self.tau_0, self.detuning, self.alpha, t_quench=self.t_quench, polars=None, **self._base_kwargs())
 
+class ThreePeakPulse(Pulse):
+    def __init__(self, tau_0, detuning, t_s=0, r=0, t_center=0, pulse_area=1*np.pi, phase=0, polarization=None, interaction_op=None, t_quench=None, **pulse_kwargs):
+            self.t_quench = t_quench
+            self.tau_0 = tau_0  # transform-limited pulse duration, in ps. The actual pulse duration is given by tau = sqrt(tau_0^2 + alpha^2 / tau_0^2)
+            self.t_s = t_s  # time separation between the peaks
+            self.r = r  # ratio of the middle peak to the outer peaks
+            super().__init__(tau=tau_0, detuning=detuning, w_gain=0, t_center=t_center, pulse_area=pulse_area, phase=phase, polarization=polarization,
+                             interaction_op=interaction_op, **pulse_kwargs)
+        
+    def get_parameters(self):
+        """
+        returns tau and chirp parameter
+        """
+        return "tau: {:.4f} ps , t_s: {:.4f}ps, R: {:.4f}".format(self.tau, self.t_s, self.r)
+    
+    def _gaussian(self, t, t_center, tau):
+            return np.exp(-0.5 * ((t - t_center) / tau) ** 2)
+
+    
+    def _get_envelope(self, t):
+            return self.pulse_area  / (np.sqrt(2 * np.pi * self.tau * self.tau_0)) * (self._gaussian(t, self.t_center, self.tau_0) 
+                                                                                      + self.r*(self._gaussian(t, self.t_center - self.t_s, self.tau_0) 
+                                                                                              + self._gaussian(t, self.t_center + self.t_s, self.tau_0)))
+
+    def get_envelope(self, t):
+            env = self._get_envelope(t)
+            if self.t_quench is not None:
+                env[t >= self.t_quench] = 0
+            return env
+    
+    def get_integral(self, t):
+            raise NotImplementedError("Integral of chirped pulse is not implemented. Use get_total to get the full pulse shape and integrate numerically if needed.")
+    
+   
+    def copy(self):
+        return ThreePeakPulse(self.tau_0, self.detuning, self._s, self.r, **self._base_kwargs())
+
 class PulseTrain:
     """
     pulse train, with pulses separated by delta_t. Each occurence can be constituted of multiple pulses, i.e., for 
