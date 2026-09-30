@@ -442,10 +442,11 @@ class GeneralSystemACE:
             else:
                 PT.add_PT(self.pt_file)
         # calculate dynamical maps
+        if get_M_t:
+            # directly returns the free propagator at the given timegrid, without running the simulation
+            # only phonon-free, does not include effect of process tensor.
+            return t, np.array(fprop.get_M_timegrid(tgrid))
         if calc_dynmap:
-            if get_M_t is not None:  # option to return Propagator at specific time.
-                fprop.update(get_M_t,self.dt)
-                return fprop.M
             dynmap = DynamicalMap(fprop, PT, sim, tgrid)
             #_dm = np.array(dynmap.E)
             _dm = dynmap.get_E()
