@@ -37,7 +37,7 @@ def get_max_pulse_t(pulses):
 
 
 class PolarizationEntanglement():
-    def __init__(self, system, sigma_x, sigma_y, *pulses, tend=800, 
+    def __init__(self, system, sigma_x, sigma_y, *pulses, tend=800, tau_end=None,
                  dt_small=0.1, max_pulse_t=None, workers=2, t_mem=10,
                  dt_big=None, regular_stepping=False,
                  variable_stepping=False, exponential_stepping=False, verbose=False) -> None:
@@ -77,6 +77,7 @@ class PolarizationEntanglement():
         self.system = system  # system that is used for the simulation
         self.dt = system.dt  # timestep during simulation
         self.tend = tend  # final time t for the simulation
+        self.tau_end = tau_end if tau_end is not None else tend  # final time tau for the simulation
         self.pulses = pulses
         self.t_mem = t_mem  # memory time for phonon dynamics
         self.workers = workers  # number of threads spawned by ThreadPoolExecutor
@@ -117,7 +118,7 @@ class PolarizationEntanglement():
 
         if self.verbose:
             print("t1 axis for spectrum calculation: ", len(self.t1), " points")
-            n_tau = int(self.tend / self.dt)
+            n_tau = int(self.tau_end / self.dt)
             print("tau axis for spectrum calculation: ", n_tau + 1, " points")
 
     def get_tl(self):
@@ -129,7 +130,8 @@ class PolarizationEntanglement():
         # _options["pulse_file_x"] = self.pulse_file_x
         # _options["pulse_file_y"] = self.pulse_file_y
        
-        _t, dm = self.system.run(0, tend, *self.pulses, multitime_op=[], calc_dynmap=True)
+        # in phonon-free case one could directly get the free propagator (which then coincides with the time-local dynamical maps)
+        _t, dm = self.system.run(0, tend, *self.pulses, multitime_op=[], calc_dynmap=True, get_M_t=False)
         _t = np.round(_t, 6)  # round to 6 digits to avoid floating point errors
         dm_tl = calc_tl_dynmap_pseudo(dm, _t)
         # check_tlmap_frobenius(dm_tl, _t, xlim=tend-self.dt)
@@ -159,7 +161,7 @@ class PolarizationEntanglement():
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
         if tau_max is None:
-            tau_max=self.tend
+            tau_max=self.tau_end
         n_tau = int(tau_max/self.dt)
         tau = np.linspace(0, tau_max, n_tau + 1)
         if time_sparse is None:
@@ -192,10 +194,10 @@ class PolarizationEntanglement():
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
 
-        tau_max=self.tend
+        tau_max=self.tau_end
         n_tau = int(tau_max/self.dt)
-        print("n_tau:", n_tau)
-        tau = np.linspace(0, tau_max, n_tau + 1)
+        # print("n_tau:", n_tau)
+        tau = np.linspace(0, tau_max, n_tau + 1)  # never used, right now we analytically integrate tau -> infinity
         # calc tl maps:
         if self.tl_map is None:
             # calculate the dynamical maps
@@ -205,8 +207,8 @@ class PolarizationEntanglement():
         dm_s = self.tl_map  # stationary time-local map
         # dm_tl = self.dm_tl
         dm_tl = self.tl_dms  # time-local dynamical maps during pulse
-        print("dm shape:", np.shape(dm))
-        print("dm_tl shape:", np.shape(dm_tl))
+        # print("dm shape:", np.shape(dm))
+        # print("dm_tl shape:", np.shape(dm_tl))
         # dm_s = dm_tl[int(self._t_mem//self.dt)+2]  # dynamical map at t = t_mem
 
         # dm_s = dm[-1] @ np.linalg.inv(dm[int(self._t_mem//self.dt)])
@@ -229,7 +231,15 @@ class PolarizationEntanglement():
         op_4 = np.kron(np.eye(dim), op4_t)  # op_4 is applied from left at time t+tau
         # t > tmem part: start with rho_tmem
 
-        rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem, this directly propagates rho from 0 to tmem
+        # get dm from 0->tmem from dm_tl by repeated matrixmult
+        # dm_from_0_to_tmem = np.eye(dim*dim)
+        # for i in range(int(self._t_mem//self.dt)-1):
+            # dm_from_0_to_tmem = dm_from_0_to_tmem @ dm_tl[i]
+        
+        rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem
+        # print("dm_from_0_to_tmem shape:", np.shape(dm_from_0_to_tmem))
+        # print("rho0 shape:", np.shape(rho0.reshape(dim**2)))
+        # rho_tmem = dm_from_0_to_tmem @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem, this directly propagates rho from 0 to tmem
         
         x_n2 = T_inv @ rho_tmem
         x_n1n2 = T_inv @ op_4 @ op_1 @ T
@@ -295,9 +305,9 @@ class PolarizationEntanglement():
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0  # initial state, rho0 = |0><0|
 
-        tau_max=self.tend
+        tau_max=self.tau_end
         n_tau = int(tau_max/self.dt)
-        print("n_tau:", n_tau)
+        # print("n_tau:", n_tau)
         tau = np.linspace(0, tau_max, n_tau + 1)
         # calc tl maps:
         if self.tl_map is None:
@@ -308,8 +318,8 @@ class PolarizationEntanglement():
         dm_s = self.tl_map  # stationary time-local map
         # dm_tl = self.dm_tl
         dm_tl = self.tl_dms  # time-local dynamical maps during pulse
-        print("dm shape:", np.shape(dm))
-        print("dm_tl shape:", np.shape(dm_tl))
+        # print("dm shape:", np.shape(dm))
+        # print("dm_tl shape:", np.shape(dm_tl))
         # dm_s = dm_tl[int(self._t_mem//self.dt)+2]  # dynamical map at t = t_mem
 
         # dm_s = dm[-1] @ np.linalg.inv(dm[int(self._t_mem//self.dt)])
@@ -332,7 +342,12 @@ class PolarizationEntanglement():
         op_4 = np.kron(np.eye(dim), op4_t)  # op_4 is applied from left at time t+tau
         # t > tmem part: start with rho_tmem
 
+        # get dm from 0->tmem from dm_tl by repeated matrixmult
+        # dm_from_0_to_tmem = np.eye(dim*dim)
+        # dm_from_0_to_tmem = map(lambda x: dm_from_0_to_tmem @ x, dm_tl[:int(self._t_mem//self.dt)])
+
         rho_tmem = dm[int(self._t_mem//self.dt)] @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem
+        # rho_tmem = dm_from_0_to_tmem @ rho0.reshape(dim**2)  # using only the dm_map 0->tmem, this directly propagates rho from 0 to tmem
         # rho_tmem2 = rho0.reshape(dim**2)
         # for i in range(len(dm_tl)):
         #     rho_tmem2 = dm_tl[i] @ rho_tmem2
@@ -489,7 +504,7 @@ class PolarizationEntanglement():
         rho0 = np.zeros((dim, dim), dtype=complex)
         rho0[0, 0] = 1.0
 
-        tau_max=self.tend
+        tau_max = self.tau_end
         n_tau = int(tau_max/self.dt)
         tau = np.linspace(0, tau_max, n_tau + 1)
 
@@ -532,7 +547,7 @@ class PolarizationEntanglement():
         opC_mat = op4_t
 
         G2 = propagate_tau_module.calc_onetime_simple_phonon(dm_taucs2=dm_taucs2, dm_sep1=dm_separated1, dm_sep2=dm_separated2, dm_s=dm_s,
-                                                            rho_init=rho0.reshape(dim**2),n_tb=int(self.tend/self.dt),
+                                    rho_init=rho0.reshape(dim**2),n_tb=int(self.tau_end/self.dt),
                                                             dim=dim,opa=opA_mat,opb=opB_mat,opc=opC_mat,time=t_axis,time_sparse=self.t1)
         G2 = np.trapezoid(G2, tau, axis=1)
         return self.t1, G2, np.trapezoid(G2, self.t1, axis=0)
@@ -625,21 +640,20 @@ class PolarizationEntanglement():
         op_1 = {"operator": op1_t, "applyFrom": "left", "applyBefore":False}
 
         t1 = self.t1
-        n_tau = int((self.tend)/self.dt)
+        n_tau = int((self.tau_end)/self.dt)
         # simulation time-axis
-        t2 = np.linspace(0, self.tend, n_tau + 1) # tau axis
+        t2 = np.linspace(0, self.tau_end, n_tau + 1) # tau axis
         _G1 = np.zeros([len(t1),len(t2)], dtype=complex)
-        tend = self.tend  # not always the same end time, see below
         with tqdm.tqdm(total=len(t1), leave=None) as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
                 for i in range(len(t1)):
                     op_1_new = dict(op_1)
                     op_1_new["time"] = t1[i]
-                    # t_end is always t[i]+tend, as we want to calculate G1 for tau=t[i],...,tend,
+                    # t_end is always t[i]+tau_end, as we want to calculate G1 for tau=t[i],...,tau_end,
                     # i.e., always the same length for the tau axis, as these will be fourier transformed
                     # to get the spectrum
-                    _e = executor.submit(self.system.run,0,t1[i]+tend,*self.pulses,multitime_op=[op_1_new], output_ops=output_ops)
+                    _e = executor.submit(self.system.run,0,t1[i]+self.tau_end,*self.pulses,multitime_op=[op_1_new], output_ops=output_ops)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 # wait for all futures
@@ -653,7 +667,7 @@ class PolarizationEntanglement():
                 _G1[i,1:] = futures[i][0][-n_tau:]  # tau>0
         return t1, t2, _G1
     
-    def calc_timedynamics_tl_phonons(self):
+    def calc_timedynamics_tl_phonons(self, output_ops=None):
         tl_map, dms = self.get_tl_phonons(mtos=[], t_mtos=[])
         dm_sep1 = dms[0]
 
@@ -676,9 +690,14 @@ class PolarizationEntanglement():
             # now apply the time-local dynamical map
         for i in range(len(dm_sep1),len_tb+1):
             rho_t[i] = np.dot(tl_map, rho_t[i-1])
+        if output_ops is not None:
+            rho_t_ops = np.zeros((len(t_total), len(output_ops)), dtype=complex)
+            for i in range(len(t_total)):
+                rho_t_ops[i] = [np.trace(op @ rho_t[i].reshape((self.dim, self.dim))) for op in output_ops]
+            return t_total, rho_t.reshape((len(t_total), self.dim, self.dim)), rho_t_ops
         return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))
 
-    def calc_timedynamics_tl(self):
+    def calc_timedynamics_tl(self, output_ops=None):
         if self.phonons:
             return self.calc_timedynamics_tl_phonons()
         if self.tl_map is None:
@@ -704,19 +723,24 @@ class PolarizationEntanglement():
             # now apply the time-local dynamical map
         for i in range(len(self.tl_dms),len_tb+1):
             rho_t[i] = np.dot(self.tl_map, rho_t[i-1])
+        if output_ops is not None:
+            rho_t_ops = np.zeros((len(t_total), len(output_ops)), dtype=complex)
+            for i in range(len(t_total)):
+                rho_t_ops[i] = [np.trace(op @ rho_t[i].reshape((self.dim, self.dim))) for op in output_ops]
+            return t_total, rho_t.reshape((len(t_total), self.dim, self.dim)), rho_t_ops
         return t_total, rho_t.reshape((len(t_total), self.dim, self.dim))
     
     def calc_timedynamics(self, output_ops=None):
-        new_options = dict(self.options)
-        if output_ops is not None:
-            new_options["output_ops"] = output_ops
-        return self.system.run(0, self.tend, *self.pulses, output_ops=new_options.get("output_ops", []))
+        return self.system.run(0, self.tend, *self.pulses, output_ops=output_ops)
     
-    def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None):
+    def get_spectrum(self, op1_t, op2_ttau, save_g1_dir=None, load=None, comment=True):
         """
         calculates the spectrum of G1 for two operators:
         <op2(t1+tau) op1(t1)>
         """
+        if comment:
+            print("To calculate the spectrum, consider using pyaceqd.two_time.spectrum.Spectrum class, which has more options.")
+            print("Invoke this function with comment=False to suppress this message.")
         # uses G1 to calculate the spectrum
         if load is not None and os.path.exists(load + "g1.npy"):
             t_axis = np.load(load + "t_axis.npy")
@@ -758,9 +782,9 @@ class PolarizationEntanglement():
         op_4 = {"operator": op4_t, "applyFrom": "left", "applyBefore":False}
 
         t1 = self.t1
-        n_tau = int((self.tend)/self.dt)
+        n_tau = int((self.tau_end)/self.dt)
         # simulation time-axis
-        t2 = np.linspace(0, self.tend, n_tau + 1)
+        t2 = np.linspace(0, self.tau_end, n_tau + 1)
         _G2 = np.zeros([len(t1)], dtype=complex)
         tend = self.tend  # always the same
         # _G2ttau=None
@@ -775,7 +799,7 @@ class PolarizationEntanglement():
                     op_4_new["time"] = t1[i]
                     # apply op4 from left and sigma_bbdag from right
                     multitme_ops = [op_1_new, op_4_new]
-                    _e = executor.submit(self.system.run,0,tend,*self.pulses,multitime_op=multitme_ops, output_ops=output_ops)
+                    _e = executor.submit(self.system.run,0,t1[i] + self.tau_end,*self.pulses,multitime_op=multitme_ops, output_ops=output_ops)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 # wait for all futures
@@ -785,8 +809,7 @@ class PolarizationEntanglement():
                 _, futures[i] = futures[i].result()
             # futures now contains [t,<op2*op3>,<op1*op2*op3*op4>] for every i
             for i in range(len(t1)):
-                # t2 = t1,...,tend
-                n_t2 = n_tau - int((t1[i])/self.dt)
+                n_t2 = n_tau
                 temp_t2 = np.zeros(n_t2+1, dtype=complex)
                 # special case tau=0:
                 # as then, Tr(op1*op2*op3*op4 * rho) = G2(t,0), which is the value with index [2][-(n_t2+1)]
@@ -795,7 +818,7 @@ class PolarizationEntanglement():
                 # here, we want the <op2*op3>-values for every t2=t1,..,tend
                 if n_t2 > 0: 
                     temp_t2[1:n_t2+1] = futures[i][0][-n_t2:]
-                t_new = t2[:len(temp_t2)]
+                t_new = t2
                 # plt.clf()
                 # plt.plot(t_new,np.real(temp_t2),'r-')
                 # plt.plot(t_new,np.imag(temp_t2),'b-')
@@ -808,6 +831,14 @@ class PolarizationEntanglement():
         return t1, _G2, np.trapezoid(_G2,t1)  # , taunew, _G2ttau
     
     def calc_densitymatrix_reuse(self, plot_G2=None, return_counts=False, return_rho=False):
+        """
+        Calculates the density matrix by reusing the G2 calculations for different operator combinations.
+        This way, only three G2 calculations are needed instead of ten.
+        
+        :param plot_G2: If provided, the G2 functions will be plotted and saved to a file with this name.
+        :param return_counts: returns the diagonal elements of the density matrix and the coherence term (0,3) if True.
+        :param return_rho: returns the full density matrix if True. Prioritizes over return_counts if both are True.
+        """
         density_matrix = np.zeros([4,4], dtype=complex)
         with tqdm.tqdm(total=3, leave=None) as tq:
             # XX,XX; XX,XY; XY,XY
@@ -981,16 +1012,14 @@ class PolarizationEntanglement():
         op_4 = {"operator": op4_t, "applyFrom": "left", "applyBefore":False}
 
         t1 = self.t1
-        n_tau = int((self.tend)/self.dt)
+        n_tau = int((self.tau_end)/self.dt)
         # simulation time-axis
-        t2 = np.linspace(0, self.tend, n_tau + 1)
+        t2 = np.linspace(0, self.tau_end, n_tau + 1)
         _G2 = np.zeros([len(op23s_ttau),len(t1)], dtype=complex)
         
         if return_full_G2:
             G2_full = np.zeros([len(op23s_ttau), len(t1), n_tau + 1], dtype=complex)
-        
-        tend = self.tend  # always the same
-        
+
         with tqdm.tqdm(total=len(t1), leave=None, desc="calculating") as tq:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = []
@@ -1001,7 +1030,7 @@ class PolarizationEntanglement():
                     op_4_new["time"] = t1[i]
                     # apply op4 from left and sigma_bbdag from right
                     multitme_ops = [op_1_new, op_4_new]
-                    _e = executor.submit(self.system.run,0,tend,*self.pulses,multitime_op=multitme_ops, output_ops=output_ops)
+                    _e = executor.submit(self.system.run,0,t1[i] + self.tau_end,*self.pulses,multitime_op=multitme_ops, output_ops=output_ops)
                     _e.add_done_callback(lambda f: tq.update())
                     futures.append(_e)
                 # wait for all futures
@@ -1014,8 +1043,7 @@ class PolarizationEntanglement():
             # and futures[i][1,...,len(op23s)] are the <op2*op3>-values
             # and futures[i][len(op23s)+1,...,2*len(op23s)] are the <op1*op2*op3*op4>-values
             for i in range(len(t1)):
-                # t2 = t1,...,tend
-                n_t2 = n_tau - int((t1[i])/self.dt)
+                n_t2 = n_tau
                 temp_t2 = np.zeros([len(op23s_ttau),n_t2+1], dtype=complex)
                 for j in range(len(op23s_ttau)):
                     # special case tau=0:
@@ -1029,7 +1057,7 @@ class PolarizationEntanglement():
                     if return_full_G2:
                         G2_full[j, i, :n_t2+1] = temp_t2[j]
                 
-                t_new = t2[:n_t2+1]
+                t_new = t2
                 # integrate over t_new, i.e., over the tau axis
                 for j in range(len(op23s_ttau)):
                     _G2[j,i] = np.trapezoid(temp_t2[j],t_new)
