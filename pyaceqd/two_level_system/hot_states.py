@@ -6,7 +6,7 @@ from pyaceqd.helpers.ace_operators import ketbra
 hbar = constants.hbar  # meV*ps
 kb = constants.kB # meV/K
 
-class TwoHotStates(GeneralSystemACE): #
+class TwoHotStates(GeneralSystemACE):
     def __init__(self, dt=0.1, gamma_e=1/100, lindblad=True, phonons=False, ae=5, temperature=4, 
                  delta_E1=5.1, gamma_01=0.001, d1=2, delta_E2=7.09, gamma_02=0.01, d2=4,
                  verbose=False, pt_file=None, J_to_file=None, J_file=None, threshold=8, 
